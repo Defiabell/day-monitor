@@ -27,7 +27,7 @@ def generate_report(conn, date_str: str, output_dir: Path, client) -> str:
         f'## 分类统计\n'
         f'| 类别 | 时长 | 占比 |\n'
         f'|------|------|------|\n'
-        f'（统计 coding/meeting/browsing/reading/communication/design/other 各自总时长和百分比）\n\n'
+        f'（统计 coding/meeting/slack/wechat/feishu/email/browser/reading/design/app/other 各自总时长和百分比，跳过时长为 0 的类别）\n\n'
         f'## 今日小结\n'
         f'（2-3句总结，中文）'
     )

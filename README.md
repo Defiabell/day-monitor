@@ -89,13 +89,17 @@ Claude Haiku 视觉分析（返回活动描述 + 类别）
 
 | 类别 | 触发场景 |
 |------|---------|
-| `coding` | VS Code、Cursor、终端、IDE |
-| `meeting` | Zoom、Slack huddle、视频会议 |
-| `browsing` | 浏览器（非文档阅读） |
-| `reading` | 文档、PDF、技术文章 |
-| `communication` | Slack、邮件、微信 |
-| `design` | Figma、设计工具 |
-| `other` | 无法归类 |
+| `coding` | VS Code、Cursor、终端、Xcode、任何 IDE |
+| `meeting` | Zoom、Google Meet、腾讯会议等视频/语音会议 |
+| `slack` | Slack |
+| `wechat` | 微信（WeChat） |
+| `feishu` | 飞书（Lark） |
+| `email` | Mail、Outlook、Gmail 网页版 |
+| `browser` | 浏览器中的网页浏览 |
+| `reading` | 文档、PDF、技术文章、Notion |
+| `design` | Figma、Sketch 等设计工具 |
+| `app` | 其他桌面应用（Meshy、产品测试、系统设置等） |
+| `other` | 以上均不符合 |
 
 ---
 

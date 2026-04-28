@@ -36,7 +36,7 @@ def test_analyze_screenshot_strips_markdown_codeblock():
 
 
 def test_analyze_screenshot_calls_haiku_model():
-    client = make_mock_client('{"summary": "浏览网页", "category": "browsing"}')
+    client = make_mock_client('{"summary": "浏览网页", "category": "browser"}')
     analyze_screenshot(make_png(), client)
     call_kwargs = client.messages.create.call_args
     assert call_kwargs.kwargs['model'] == 'claude-haiku-4-5-20251001'
