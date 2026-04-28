@@ -31,7 +31,9 @@ python monitor.py report
 |------|------|
 | `python monitor.py start` | 启动后台监控 |
 | `python monitor.py stop` | 停止监控 |
-| `python monitor.py report` | 生成今天的日报 |
+| `python monitor.py status` | 打印今日活动概况（随时可查，不生成文件） |
+| `python monitor.py status --date 2026-04-27` | 查看指定日期概况 |
+| `python monitor.py report` | 生成今天的完整日报（Markdown 文件） |
 | `python monitor.py report --date 2026-04-27` | 生成指定日期的日报 |
 | `python monitor.py install` | 安装 launchd，登录时自动启动 |
 | `python monitor.py uninstall` | 卸载 launchd 自启 |
@@ -143,6 +145,31 @@ day-monitor/
 
 ---
 
+## 查看原始数据
+
+**方式一：DB Browser for SQLite（GUI，推荐）**
+
+```bash
+brew install --cask db-browser-for-sqlite
+open -a "DB Browser for SQLite" ~/.day-monitor/monitor.db
+```
+
+打开后点 **Browse Data → events 表** 即可浏览所有记录。
+
+**方式二：命令行**
+
+```bash
+# 查看最近 20 条记录
+sqlite3 ~/.day-monitor/monitor.db \
+  "SELECT timestamp, category, summary, duration_s FROM events ORDER BY timestamp DESC LIMIT 20"
+
+# 统计今日各分类时长（秒）
+sqlite3 ~/.day-monitor/monitor.db \
+  "SELECT category, SUM(duration_s) FROM events WHERE timestamp LIKE '$(date +%Y-%m-%d)%' GROUP BY category ORDER BY 2 DESC"
+```
+
+---
+
 ## 开发
 
 ```bash
@@ -161,6 +188,29 @@ tail -f ~/.day-monitor/stderr.log
 ```bash
 cat ~/.day-monitor/monitor.pid   # 查看 PID
 ps aux | grep monitor.py         # 确认进程存在
+```
+
+**Q：想随时看今天进展怎么办？**
+
+```bash
+python monitor.py status
+```
+
+输出示例：
+```
+今日概况 2026-04-28  （共 3h20m）
+
+分类统计：
+  coding             1h23m   42%  ████████
+  meeting              55m   27%  █████
+  communication        30m   15%  ███
+  browsing             22m   11%  ██
+  other                10m    5%  █
+
+最近 10 条活动：
+  14:30  [coding       ]  在 VS Code 写 Python，修改 monitor.py
+  14:31  [communication]  在 Slack 回复消息
+  ...
 ```
 
 **Q：报告显示"No events found"？**

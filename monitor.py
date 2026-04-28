@@ -85,6 +85,43 @@ def report(date):
 
 
 @cli.command()
+@click.option('--date', default=None, help='YYYY-MM-DD (default: today)')
+def status(date):
+    """Print a quick activity summary to the terminal (no file generated)."""
+    from collections import defaultdict
+    from storage import init_db, get_events_for_date
+
+    date_str = date or datetime.now().strftime('%Y-%m-%d')
+    conn = init_db(DB_PATH)
+    events = get_events_for_date(conn, date_str)
+
+    if not events:
+        click.echo(f'No events found for {date_str}')
+        return
+
+    total_s = sum(e['duration_s'] for e in events)
+    by_category = defaultdict(int)
+    for e in events:
+        by_category[e['category']] += e['duration_s']
+
+    def fmt(s):
+        h, m = divmod(s // 60, 60)
+        return f'{h}h{m:02d}m' if h else f'{m}m'
+
+    click.echo(f'\n今日概况 {date_str}  （共 {fmt(total_s)}）\n')
+
+    click.echo('分类统计：')
+    for cat, secs in sorted(by_category.items(), key=lambda x: -x[1]):
+        bar = '█' * (secs * 20 // total_s)
+        click.echo(f'  {cat:<16} {fmt(secs):>7}  {secs*100//total_s:>3}%  {bar}')
+
+    click.echo('\n最近 10 条活动：')
+    for e in events[-10:]:
+        t = e['timestamp'][11:16]
+        click.echo(f"  {t}  [{e['category']:<13}]  {e['summary']}")
+
+
+@cli.command()
 def install():
     """Install launchd plist for auto-start on login."""
     from daemon import install_launchd
