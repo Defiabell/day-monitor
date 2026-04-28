@@ -62,34 +62,28 @@ def test_hash_distance_different_images():
     assert hash_distance(h1, h2) > 8
 
 
-def make_ioreg_result(power_state=4):
-    from unittest.mock import MagicMock
-    r = MagicMock()
-    r.stdout = f'"CurrentPowerState" = {power_state}\n'
-    r.returncode = 0
-    return r
-
-
-def make_cgsession_result(locked=False):
-    from unittest.mock import MagicMock
-    r = MagicMock()
-    r.stdout = '1\n' if locked else '0\n'
-    r.returncode = 0
-    return r
+def make_quartz_mock(locked=False, display_active=True):
+    from unittest.mock import MagicMock, patch
+    import sys
+    quartz = MagicMock()
+    quartz.CGSessionCopyCurrentDictionary.return_value = {'CGSSessionScreenIsLocked': int(locked)}
+    quartz.CGDisplayIsActive.return_value = display_active
+    quartz.CGMainDisplayID.return_value = 1
+    return quartz
 
 
 def test_is_screen_active_when_display_on_and_unlocked():
-    with patch('capture.subprocess.run', side_effect=[make_ioreg_result(4), make_cgsession_result(False)]):
+    with patch.dict('sys.modules', {'Quartz': make_quartz_mock(locked=False, display_active=True)}):
         assert is_screen_active() is True
 
 
 def test_is_screen_active_when_display_off():
-    with patch('capture.subprocess.run', side_effect=[make_ioreg_result(0)]):
+    with patch.dict('sys.modules', {'Quartz': make_quartz_mock(locked=False, display_active=False)}):
         assert is_screen_active() is False
 
 
 def test_is_screen_active_when_locked():
-    with patch('capture.subprocess.run', side_effect=[make_ioreg_result(4), make_cgsession_result(True)]):
+    with patch.dict('sys.modules', {'Quartz': make_quartz_mock(locked=True, display_active=True)}):
         assert is_screen_active() is False
 
 

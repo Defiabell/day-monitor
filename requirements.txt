@@ -3,6 +3,7 @@ imagehash>=4.3.1
 Pillow>=10.4.0
 click>=8.1.8
 python-dotenv>=1.0.0
+pyobjc-framework-Quartz>=10.0
 
 # dev
 pytest>=8.3.0
