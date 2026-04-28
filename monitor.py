@@ -160,7 +160,7 @@ def _loop():
         conn = init_db(DB_PATH)
         cleanup_old_events(conn, days=30)
         client = anthropic.Anthropic(api_key=api_key)
-        loop = MonitorLoop(conn=conn, client=client, interval=10)
+        loop = MonitorLoop(conn=conn, client=client, interval=20)
         loop.run()
     finally:
         PID_PATH.unlink(missing_ok=True)

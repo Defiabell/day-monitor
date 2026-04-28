@@ -7,11 +7,11 @@ from analyze import analyze_screenshot
 from capture import compute_hash, hash_distance, is_screen_active, resize_for_api, take_screenshot
 from storage import get_last_event, increment_last_duration, insert_event
 
-DEDUP_THRESHOLD = 8
+DEDUP_THRESHOLD = 12
 
 
 class MonitorLoop:
-    def __init__(self, conn, client, interval: int = 10):
+    def __init__(self, conn, client, interval: int = 20):
         self.conn = conn
         self.client = client
         self.interval = interval

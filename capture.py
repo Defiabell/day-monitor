@@ -35,7 +35,7 @@ def take_screenshot() -> bytes:
             os.unlink(path)
 
 
-def resize_for_api(image_bytes: bytes, max_width: int = 1280) -> bytes:
+def resize_for_api(image_bytes: bytes, max_width: int = 640) -> bytes:
     img = Image.open(io.BytesIO(image_bytes))
     if img.width > max_width:
         ratio = max_width / img.width
