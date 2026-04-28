@@ -7,8 +7,10 @@ from datetime import datetime
 from pathlib import Path
 
 import click
+from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).parent))
+load_dotenv(Path(__file__).parent / '.env')
 
 DB_PATH = Path.home() / '.day-monitor' / 'monitor.db'
 PID_PATH = Path.home() / '.day-monitor' / 'monitor.pid'
