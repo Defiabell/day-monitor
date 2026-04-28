@@ -26,9 +26,13 @@ def cli():
 def start():
     """Start background monitor."""
     if PID_PATH.exists():
-        pid = PID_PATH.read_text().strip()
-        click.echo(f'Monitor already running (PID {pid}). Use `stop` first.')
-        return
+        pid = int(PID_PATH.read_text().strip())
+        try:
+            os.kill(pid, 0)  # check process is alive
+            click.echo(f'Monitor already running (PID {pid}). Use `stop` first.')
+            return
+        except ProcessLookupError:
+            PID_PATH.unlink(missing_ok=True)  # stale PID file, clean it up
 
     api_key = os.environ.get('ANTHROPIC_API_KEY')
     if not api_key:
@@ -40,8 +44,6 @@ def start():
         start_new_session=True,
         env=os.environ.copy(),
     )
-    PID_PATH.parent.mkdir(parents=True, exist_ok=True)
-    PID_PATH.write_text(str(proc.pid))
     click.echo(f'Monitor started (PID {proc.pid})')
 
 
@@ -150,12 +152,18 @@ def _loop():
         print('Error: ANTHROPIC_API_KEY not set', file=sys.stderr)
         sys.exit(1)
 
-    conn = init_db(DB_PATH)
-    cleanup_old_events(conn, days=30)
+    # Write PID file so stop/status commands work regardless of how loop was started
+    PID_PATH.parent.mkdir(parents=True, exist_ok=True)
+    PID_PATH.write_text(str(os.getpid()))
 
-    client = anthropic.Anthropic(api_key=api_key)
-    loop = MonitorLoop(conn=conn, client=client, interval=10)
-    loop.run()
+    try:
+        conn = init_db(DB_PATH)
+        cleanup_old_events(conn, days=30)
+        client = anthropic.Anthropic(api_key=api_key)
+        loop = MonitorLoop(conn=conn, client=client, interval=10)
+        loop.run()
+    finally:
+        PID_PATH.unlink(missing_ok=True)
 
 
 if __name__ == '__main__':
