@@ -4,7 +4,7 @@ import time
 from datetime import datetime
 
 from analyze import analyze_screenshot
-from capture import compute_hash, hash_distance, resize_for_api, take_screenshot
+from capture import compute_hash, hash_distance, is_screen_active, resize_for_api, take_screenshot
 from storage import get_last_event, increment_last_duration, insert_event
 
 DEDUP_THRESHOLD = 8
@@ -18,6 +18,9 @@ class MonitorLoop:
         self._running = True
 
     def _tick(self) -> None:
+        if not is_screen_active():
+            return
+
         raw = take_screenshot()
         resized = resize_for_api(raw)
         new_hash = compute_hash(resized)

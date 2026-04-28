@@ -8,6 +8,35 @@ import imagehash
 from PIL import Image
 
 
+def is_screen_active() -> bool:
+    """Return False if display is off or screen is locked."""
+    # Check display power state via IODisplayWrangler (state 4 = on)
+    try:
+        r = subprocess.run(
+            ['ioreg', '-n', 'IODisplayWrangler', '-r'],
+            capture_output=True, text=True, timeout=2
+        )
+        if '"CurrentPowerState" = 4' not in r.stdout:
+            return False
+    except Exception:
+        pass
+
+    # Check screen lock via CGSession
+    try:
+        r = subprocess.run(
+            ['/usr/bin/python3', '-c',
+             'import Quartz; s=Quartz.CGSessionCopyCurrentDictionary(); '
+             'print(int(bool(s.get("CGSSessionScreenIsLocked", 0))))'],
+            capture_output=True, text=True, timeout=2
+        )
+        if r.stdout.strip() == '1':
+            return False
+    except Exception:
+        pass
+
+    return True
+
+
 def take_screenshot() -> bytes:
     path = tempfile.mktemp(suffix='.png')
     try:

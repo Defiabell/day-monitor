@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from unittest.mock import patch
 from PIL import Image
-from capture import take_screenshot, resize_for_api, compute_hash, hash_distance
+from capture import take_screenshot, resize_for_api, compute_hash, hash_distance, is_screen_active
 
 
 def make_png(width=100, height=100, color=(128, 128, 128)) -> bytes:
@@ -60,6 +60,37 @@ def test_hash_distance_different_images():
     h1 = compute_hash(png1)
     h2 = compute_hash(png2)
     assert hash_distance(h1, h2) > 8
+
+
+def make_ioreg_result(power_state=4):
+    from unittest.mock import MagicMock
+    r = MagicMock()
+    r.stdout = f'"CurrentPowerState" = {power_state}\n'
+    r.returncode = 0
+    return r
+
+
+def make_cgsession_result(locked=False):
+    from unittest.mock import MagicMock
+    r = MagicMock()
+    r.stdout = '1\n' if locked else '0\n'
+    r.returncode = 0
+    return r
+
+
+def test_is_screen_active_when_display_on_and_unlocked():
+    with patch('capture.subprocess.run', side_effect=[make_ioreg_result(4), make_cgsession_result(False)]):
+        assert is_screen_active() is True
+
+
+def test_is_screen_active_when_display_off():
+    with patch('capture.subprocess.run', side_effect=[make_ioreg_result(0)]):
+        assert is_screen_active() is False
+
+
+def test_is_screen_active_when_locked():
+    with patch('capture.subprocess.run', side_effect=[make_ioreg_result(4), make_cgsession_result(True)]):
+        assert is_screen_active() is False
 
 
 def test_take_screenshot_calls_screencapture(tmp_path):

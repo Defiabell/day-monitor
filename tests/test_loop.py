@@ -1,7 +1,7 @@
 import io
 from unittest.mock import MagicMock, patch
 from PIL import Image
-from storage import init_db
+from storage import init_db, get_last_event
 from loop import MonitorLoop
 
 
@@ -28,11 +28,11 @@ def test_loop_inserts_event_on_first_screenshot():
     png = make_png()
 
     loop = MonitorLoop(conn=conn, client=client, interval=0)
-    with patch('loop.take_screenshot', return_value=png), \
+    with patch('loop.is_screen_active', return_value=True), \
+         patch('loop.take_screenshot', return_value=png), \
          patch('loop.resize_for_api', return_value=png):
         loop._tick()
 
-    from storage import get_last_event
     last = get_last_event(conn)
     assert last is not None
 
@@ -43,13 +43,13 @@ def test_loop_increments_duration_on_similar_screenshot():
     png = make_png()
 
     loop = MonitorLoop(conn=conn, client=client, interval=10)
-    with patch('loop.take_screenshot', return_value=png), \
+    with patch('loop.is_screen_active', return_value=True), \
+         patch('loop.take_screenshot', return_value=png), \
          patch('loop.resize_for_api', return_value=png):
         loop._tick()
         loop._tick()
 
     assert client.messages.create.call_count == 1
-    from storage import get_last_event
     assert get_last_event(conn)['duration_s'] == 20
 
 
@@ -76,9 +76,22 @@ def test_loop_calls_api_on_different_screenshot():
     png2 = make_noise_png(pixels2)
 
     loop = MonitorLoop(conn=conn, client=client, interval=10)
-    with patch('loop.take_screenshot', side_effect=[png1, png2]), \
+    with patch('loop.is_screen_active', return_value=True), \
+         patch('loop.take_screenshot', side_effect=[png1, png2]), \
          patch('loop.resize_for_api', side_effect=lambda x, **kw: x):
         loop._tick()
         loop._tick()
 
     assert client.messages.create.call_count == 2
+
+
+def test_loop_skips_tick_when_screen_inactive():
+    conn = init_db(':memory:')
+    client = make_mock_client()
+
+    loop = MonitorLoop(conn=conn, client=client, interval=10)
+    with patch('loop.is_screen_active', return_value=False):
+        loop._tick()
+
+    assert client.messages.create.call_count == 0
+    assert get_last_event(conn) is None
