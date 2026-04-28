@@ -1,67 +1,176 @@
 # day-monitor
 
-macOS 工作活动监控工具。每 10 秒截一次屏，用 Claude Haiku 识别你在做什么，每天生成时间轴 + 分类统计报告。
+macOS 工作活动自动监控工具。每 10 秒截一次屏，用 Claude Haiku（视觉模型）识别你在做什么，自动去重、分类，每天生成时间轴 + 分类统计日报。
 
-## 安装
+---
+
+## 快速开始
+
+**环境要求：** macOS、Python 3.9+、Anthropic API Key
 
 ```bash
+# 1. 安装依赖
 cd personal-projects/day-monitor
 pip install -r requirements.txt
-export ANTHROPIC_API_KEY=sk-ant-...
-```
 
-## 使用
+# 2. 配置 API Key（只需一次）
+echo 'ANTHROPIC_API_KEY=sk-ant-你的key' > .env
 
-```bash
-# 启动监控（后台运行）
+# 3. 启动监控
 python monitor.py start
 
-# 停止监控
-python monitor.py stop
-
-# 生成今天的日报
+# 4. 下班后生成日报
 python monitor.py report
-
-# 生成指定日期的日报
-python monitor.py report --date 2026-04-27
-
-# 设置开机自启（登录时自动 start）
-python monitor.py install
-
-# 取消开机自启
-python monitor.py uninstall
 ```
 
-## 报告位置
+---
 
-`~/Documents/day-monitor/YYYY-MM-DD.md`
+## 命令参考
 
-报告包含：
-- **时间轴**：每段连续活动的开始时间、时长、描述
-- **分类统计**：coding / meeting / browsing / reading / communication / design / other 各自时长和占比
-- **今日小结**：2-3 句中文总结
-
-## 数据位置
-
-| 路径 | 内容 |
+| 命令 | 说明 |
 |------|------|
-| `~/.day-monitor/monitor.db` | SQLite 数据库（30 天自动清理） |
-| `~/.day-monitor/monitor.pid` | 后台进程 PID |
-| `~/.day-monitor/stdout.log` | daemon 模式标准输出 |
-| `~/.day-monitor/stderr.log` | daemon 模式错误日志 |
+| `python monitor.py start` | 启动后台监控 |
+| `python monitor.py stop` | 停止监控 |
+| `python monitor.py report` | 生成今天的日报 |
+| `python monitor.py report --date 2026-04-27` | 生成指定日期的日报 |
+| `python monitor.py install` | 安装 launchd，登录时自动启动 |
+| `python monitor.py uninstall` | 卸载 launchd 自启 |
 
-## 费用估算
+---
 
-约 $0.5–$1 / 工作日（Claude Haiku，含去重优化，预计跳过 ~65% 截图）。
+## 日报格式
+
+报告保存到 `~/Documents/day-monitor/YYYY-MM-DD.md`，包含三个部分：
+
+```markdown
+# 工作日报 2026-04-28
+
+## 时间轴
+| 时间 | 时长 | 活动 |
+|------|------|------|
+| 09:02 – 09:47 | 45m  | 在 Slack 处理消息，回复团队问题 |
+| 09:47 – 11:30 | 1h43m | 在 VS Code 写 Python，开发 day-monitor |
+| 14:00 – 15:20 | 1h20m | Zoom 视频会议 |
+
+## 分类统计
+| 类别 | 时长 | 占比 |
+|------|------|------|
+| coding | 3h20m | 42% |
+| meeting | 1h45m | 22% |
+| ...   | ...  | ... |
+
+## 今日小结
+今天主要时间用于开发工作...
+```
+
+---
+
+## 工作原理
+
+```
+每 10 秒截图
+    ↓
+感知哈希去重（屏幕无变化则跳过，累计时长）
+    ↓
+Claude Haiku 视觉分析（返回活动描述 + 类别）
+    ↓
+写入 SQLite（~/.day-monitor/monitor.db）
+    ↓
+按需生成 Markdown 日报
+```
+
+**去重机制：** 计算截图的感知哈希（perceptual hash），与上一张比较汉明距离。距离 < 8（屏幕基本没变）则跳过 API 调用，把上一条记录的时长 +10s。实测可跳过 60–70% 的截图。
+
+---
 
 ## 活动分类
 
 | 类别 | 触发场景 |
 |------|---------|
-| `coding` | IDE、编辑器、终端 |
+| `coding` | VS Code、Cursor、终端、IDE |
 | `meeting` | Zoom、Slack huddle、视频会议 |
 | `browsing` | 浏览器（非文档阅读） |
-| `reading` | 文档、PDF、文章 |
+| `reading` | 文档、PDF、技术文章 |
 | `communication` | Slack、邮件、微信 |
 | `design` | Figma、设计工具 |
 | `other` | 无法归类 |
+
+---
+
+## 数据与文件
+
+| 路径 | 内容 |
+|------|------|
+| `.env` | API Key（不提交 git） |
+| `~/.day-monitor/monitor.db` | SQLite 数据库 |
+| `~/.day-monitor/monitor.pid` | 后台进程 PID |
+| `~/.day-monitor/stdout.log` | daemon 标准输出 |
+| `~/.day-monitor/stderr.log` | daemon 错误日志 |
+| `~/Documents/day-monitor/` | 生成的日报文件 |
+| `~/Library/LaunchAgents/com.daymonitor.plist` | launchd 自启配置 |
+
+**数据保留：** 超过 30 天的记录在每次 `start` 时自动清理。
+
+---
+
+## 费用估算
+
+| 场景 | API 调用次数/天 | 费用/天 |
+|------|--------------|--------|
+| 最坏（无去重） | ~2,880 次（8h） | ~$2.9 |
+| 实际（含去重） | ~900 次 | ~$0.9 |
+
+基于 Claude Haiku 价格，含图片 token。
+
+---
+
+## 项目结构
+
+```
+day-monitor/
+├── monitor.py      # CLI 入口（click）：start / stop / report / install
+├── loop.py         # 监控主循环（截图 → 去重 → 分析 → 存储）
+├── capture.py      # 截图（screencapture）+ 感知哈希
+├── analyze.py      # Claude Haiku 视觉 API 调用
+├── storage.py      # SQLite 读写（init / insert / query / cleanup）
+├── report.py       # 日报生成（Claude Haiku 聚合 → Markdown）
+├── daemon.py       # launchd plist 安装/卸载
+├── tests/          # 单元测试（23 个，mock API，纯本地运行）
+├── .env            # API Key（gitignored）
+├── .gitignore
+└── requirements.txt
+```
+
+---
+
+## 开发
+
+```bash
+# 运行所有测试（无需 API Key，全部 mock）
+python -m pytest -v
+
+# 查看监控日志（daemon 模式）
+tail -f ~/.day-monitor/stderr.log
+```
+
+---
+
+## 常见问题
+
+**Q：监控已在运行，如何确认？**
+```bash
+cat ~/.day-monitor/monitor.pid   # 查看 PID
+ps aux | grep monitor.py         # 确认进程存在
+```
+
+**Q：报告显示"No events found"？**
+
+确认监控已运行（`python monitor.py start`）且当天有截图数据。新启动后需等待至少 10 秒才有第一条记录。
+
+**Q：屏幕共享/敏感内容怎么办？**
+
+截图只在本机处理，图片不存储（只保留哈希值和文字描述），原始截图在分析后立即删除。API 调用会将截图发送给 Anthropic 服务器，请注意工作内容的隐私边界。
+
+**Q：launchd 自启后 API Key 从哪里读？**
+
+`monitor.py` 启动时自动从脚本同目录的 `.env` 文件加载，launchd 无需额外配置。
