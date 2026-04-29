@@ -6,6 +6,9 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: write   # required for softprops/action-gh-release to create the Release
+
 jobs:
   build:
     runs-on: macos-14  # Apple Silicon, can build universal
