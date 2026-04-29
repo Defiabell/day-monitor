@@ -21,7 +21,10 @@ export function EventsView({ date }: { date: string }) {
   }, []);
 
   useEffect(() => {
-    api.events(date, search, category).then(setEvents);
+    api.events(date, search, category).then((rows) => {
+      // Reverse: newest first
+      setEvents([...rows].reverse());
+    });
   }, [date, search, category]);
 
   return (

@@ -27,6 +27,12 @@ pub struct AppUsage {
 }
 
 #[derive(Debug, Serialize)]
+pub struct AppTrendDay {
+    pub date: String,
+    pub by_app: Vec<(String, u32)>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct CategoryStat {
     pub category: String,
     pub seconds: u32,
@@ -108,6 +114,56 @@ pub fn trends(db: &Db, days: u32) -> Result<Vec<TrendDay>> {
         });
     }
     Ok(out)
+}
+
+/// Per-day app usage for the last N days. Used for the line-chart trend view.
+/// Returns one row per (date, top app) — only top-N apps by total time
+/// across the window get their own series, the rest are aggregated as "other".
+pub fn app_trends(db: &Db, days: u32, top_n: usize) -> Result<Vec<AppTrendDay>> {
+    use std::collections::HashMap;
+
+    let today = Local::now().date_naive();
+    let mut per_day: Vec<(String, HashMap<String, u32>)> = vec![];
+    let mut totals: HashMap<String, u32> = HashMap::new();
+
+    for offset in (0..days).rev() {
+        let date = today - Duration::days(offset as i64);
+        let date_str = date.format("%Y-%m-%d").to_string();
+        let events = db.events_for_date(&date_str)?;
+        let mut by_app: HashMap<String, u32> = HashMap::new();
+        for e in events {
+            if let Some(name) = e.app_name {
+                *by_app.entry(name.clone()).or_insert(0) += e.duration_s;
+                *totals.entry(name).or_insert(0) += e.duration_s;
+            }
+        }
+        per_day.push((date_str, by_app));
+    }
+
+    // Pick top-N apps across the entire window
+    let mut sorted_totals: Vec<(String, u32)> = totals.into_iter().collect();
+    sorted_totals.sort_by(|a, b| b.1.cmp(&a.1));
+    let top_apps: std::collections::HashSet<String> = sorted_totals
+        .into_iter()
+        .take(top_n)
+        .map(|(name, _)| name)
+        .collect();
+
+    let result = per_day
+        .into_iter()
+        .map(|(date, by_app)| {
+            let mut by_app_filtered: Vec<(String, u32)> = by_app
+                .into_iter()
+                .filter(|(name, _)| top_apps.contains(name))
+                .collect();
+            by_app_filtered.sort_by(|a, b| a.0.cmp(&b.0));
+            AppTrendDay {
+                date,
+                by_app: by_app_filtered,
+            }
+        })
+        .collect();
+    Ok(result)
 }
 
 pub fn app_ranking(db: &Db, days: u32) -> Result<Vec<AppUsage>> {

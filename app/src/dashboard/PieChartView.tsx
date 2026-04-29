@@ -19,7 +19,12 @@ const CATEGORY_COLORS: Record<string, string> = {
   email: '#f59e0b',
   browser: '#06b6d4',
   reading: '#84cc16',
+  writing: '#65a30d',
   design: '#ec4899',
+  '3d': '#f97316',
+  media: '#d946ef',
+  data: '#0d9488',
+  system: '#94a3b8',
   app: '#94a3b8',
   other: '#6b7280',
 };
