@@ -134,3 +134,28 @@ def test_run_skips_tick_when_paused(monkeypatch):
 
     loop.run()
     assert tick_calls == []
+
+
+def test_run_resumes_ticks_after_unpause(monkeypatch):
+    """run() should call _tick again once _paused is cleared."""
+    conn = init_db(':memory:')
+    client = make_mock_client()
+    loop = MonitorLoop(conn=conn, client=client, interval=0)
+    loop._paused = True
+
+    tick_calls = []
+    monkeypatch.setattr(loop, '_tick', lambda: tick_calls.append(1))
+
+    sleep_calls = []
+    def fake_sleep(s):
+        sleep_calls.append(s)
+        # After 2 paused iterations, simulate a SIGUSR2 by clearing the flag
+        if len(sleep_calls) == 2:
+            loop._paused = False
+        if len(sleep_calls) >= 4:
+            loop._running = False
+    monkeypatch.setattr('loop.time.sleep', fake_sleep)
+
+    loop.run()
+    # Iterations 1-2: paused (no tick); iterations 3-4: resumed (tick called twice)
+    assert len(tick_calls) == 2
