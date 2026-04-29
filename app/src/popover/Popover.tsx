@@ -70,9 +70,14 @@ export function Popover() {
   }
 
   return (
-    <div className="p-3 w-[200px] h-[300px] bg-white text-gray-900 flex flex-col">
-      <div className="flex items-center justify-between text-xs">
-        <span className="font-medium">{statusIndicator(status)}</span>
+    <div className="w-[200px] h-[300px] bg-white text-gray-900 flex flex-col">
+      <div
+        data-tauri-drag-region
+        className="flex items-center justify-between text-xs px-3 pt-3 pb-1 cursor-move select-none"
+      >
+        <span data-tauri-drag-region className="font-medium">
+          {statusIndicator(status)}
+        </span>
         <button
           onClick={() => api.openSettings()}
           className="text-gray-400 hover:text-gray-700"
@@ -81,6 +86,7 @@ export function Popover() {
           ⚙
         </button>
       </div>
+      <div className="px-3 pb-3 flex-1 flex flex-col">
 
       <div className="my-2">
         <div className="text-[10px] text-gray-500 uppercase tracking-wide">
@@ -132,6 +138,7 @@ export function Popover() {
         >
           Dashboard
         </button>
+      </div>
       </div>
     </div>
   );
