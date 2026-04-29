@@ -33,7 +33,10 @@ class MonitorLoop:
 
         result = analyze_screenshot(resized, self.client)
         ts = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
-        insert_event(self.conn, ts, new_hash, result['summary'], result['category'])
+        insert_event(
+            self.conn, ts, new_hash,
+            result['summary'], result['category'], result.get('app'),
+        )
 
     def run(self) -> None:
         signal.signal(signal.SIGTERM, self._handle_sigterm)

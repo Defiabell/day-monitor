@@ -16,7 +16,9 @@ PROMPT = (
     '- design     : Figma、Sketch 等设计工具\n'
     '- app        : 其他桌面应用（如 Meshy、产品测试、系统设置等）\n'
     '- other      : 以上均不符合\n\n'
-    '返回 JSON：{"summary": "...", "category": "..."}'
+    '同时识别正在使用的应用名（如 "VS Code"、"Slack"、"Meshy"、"Chrome"、"Cursor" 等）。'
+    '识别不出来时省略 app 字段。\n\n'
+    '返回 JSON：{"summary": "...", "category": "...", "app": "VS Code"}'
 )
 MODEL = 'claude-haiku-4-5-20251001'
 

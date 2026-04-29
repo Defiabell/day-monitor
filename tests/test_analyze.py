@@ -50,3 +50,15 @@ def test_analyze_screenshot_sends_image_and_text():
     types = [c['type'] for c in content]
     assert 'image' in types
     assert 'text' in types
+
+
+def test_analyze_screenshot_returns_app_field():
+    client = make_mock_client('{"summary": "在 VS Code 写代码", "category": "coding", "app": "VS Code"}')
+    result = analyze_screenshot(make_png(), client)
+    assert result['app'] == 'VS Code'
+
+
+def test_analyze_screenshot_handles_missing_app():
+    client = make_mock_client('{"summary": "黑屏", "category": "other"}')
+    result = analyze_screenshot(make_png(), client)
+    assert result.get('app') is None

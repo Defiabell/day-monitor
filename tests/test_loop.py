@@ -159,3 +159,26 @@ def test_run_resumes_ticks_after_unpause(monkeypatch):
     loop.run()
     # Iterations 1-2: paused (no tick); iterations 3-4: resumed (tick called twice)
     assert len(tick_calls) == 2
+
+
+def test_loop_passes_app_name_to_insert_event():
+    """When analyze returns 'app', loop should store it as app_name."""
+    conn = init_db(':memory:')
+    # Mock client returns app field
+    mock_content = MagicMock()
+    mock_content.text = '{"summary": "coding", "category": "coding", "app": "VS Code"}'
+    mock_response = MagicMock()
+    mock_response.content = [mock_content]
+    client = MagicMock()
+    client.messages.create.return_value = mock_response
+
+    loop = MonitorLoop(conn=conn, client=client, interval=10)
+    with patch('loop.is_screen_active', return_value=True), \
+         patch('loop.take_screenshot', return_value=make_png()), \
+         patch('loop.resize_for_api', return_value=make_png()):
+        loop._tick()
+
+    # Verify the row in DB has app_name
+    rows = conn.execute("SELECT app_name FROM events").fetchall()
+    assert len(rows) == 1
+    assert rows[0][0] == 'VS Code'
