@@ -71,7 +71,16 @@ export function Popover() {
 
   return (
     <div className="p-3 w-[200px] h-[300px] bg-white text-gray-900 flex flex-col">
-      <div className="text-xs font-medium">{statusIndicator(status)}</div>
+      <div className="flex items-center justify-between text-xs">
+        <span className="font-medium">{statusIndicator(status)}</span>
+        <button
+          onClick={() => api.openSettings()}
+          className="text-gray-400 hover:text-gray-700"
+          title="Settings"
+        >
+          ⚙
+        </button>
+      </div>
 
       <div className="my-2">
         <div className="text-[10px] text-gray-500 uppercase tracking-wide">
@@ -118,7 +127,7 @@ export function Popover() {
           {status.state === 'paused' ? '▶ Resume' : '⏸ Pause'}
         </button>
         <button
-          onClick={() => alert('Dashboard coming in Plan 2')}
+          onClick={() => api.openDashboard()}
           className="flex-1 py-1 text-xs border border-gray-300 rounded hover:bg-gray-50"
         >
           Dashboard

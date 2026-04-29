@@ -24,3 +24,22 @@ export interface MonitorStatus {
   message: string | null;
   pid: number | null;
 }
+
+export interface TimelineSegment {
+  start: string;
+  end: string;
+  category: string;
+  summary: string;
+  duration_s: number;
+}
+
+export interface TrendDay {
+  date: string;
+  by_category: [string, number][];
+}
+
+export interface AppUsage {
+  app_name: string;
+  seconds: number;
+  event_count: number;
+}
