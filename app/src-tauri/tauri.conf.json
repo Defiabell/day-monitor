@@ -19,7 +19,14 @@
     "active": true,
     "category": "Productivity",
     "targets": ["app", "dmg"],
-    "externalBin": ["binaries/daymonitor-loop"],
+    "resources": {
+      "../../loop_entry.py": "loop/loop_entry.py",
+      "../../analyze.py": "loop/analyze.py",
+      "../../capture.py": "loop/capture.py",
+      "../../loop.py": "loop/loop.py",
+      "../../storage.py": "loop/storage.py",
+      "../../report.py": "loop/report.py"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

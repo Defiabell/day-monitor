@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:mac": "tauri build",
+    "install:mac": "bash ./scripts/macos-sign-install.sh",
+    "dist:mac": "tauri build && bash ./scripts/macos-sign-install.sh",
     "preview": "vite preview",
     "tauri": "tauri"
   },
@@ -13,6 +16,7 @@
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-autostart": "^2.5.1",
     "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-positioner": "^2.3.1",
     "marked": "^18.0.2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

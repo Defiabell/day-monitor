@@ -1,0 +1,65 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14  # Apple Silicon, can build universal
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
+
+      - name: Cache Rust deps
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri -> target
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+          cache-dependency-path: app/yarn.lock
+
+      - name: Install frontend deps
+        working-directory: app
+        run: yarn install --frozen-lockfile
+
+      - name: Build universal .app + .dmg
+        working-directory: app
+        run: yarn tauri build --target universal-apple-darwin
+
+      - name: Create distribution zip
+        working-directory: app/src-tauri/target/universal-apple-darwin/release/bundle/macos
+        run: ditto -c -k --keepParent "Day Monitor.app" "Day-Monitor-${{ github.ref_name }}-universal.zip"
+
+      - name: Upload .app zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: day-monitor-universal-zip
+          path: app/src-tauri/target/universal-apple-darwin/release/bundle/macos/Day-Monitor-*.zip
+
+      - name: Upload .dmg
+        uses: actions/upload-artifact@v4
+        with:
+          name: day-monitor-universal-dmg
+          path: app/src-tauri/target/universal-apple-darwin/release/bundle/dmg/Day Monitor_*.dmg
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            app/src-tauri/target/universal-apple-darwin/release/bundle/macos/Day-Monitor-*.zip
+            app/src-tauri/target/universal-apple-darwin/release/bundle/dmg/Day Monitor_*.dmg
