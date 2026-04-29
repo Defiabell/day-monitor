@@ -70,7 +70,7 @@ pub async fn generate_report(
 ## 时间轴\n| 时间 | 时长 | 活动 |\n|------|------|------|\n\
 （合并相邻相似活动为连续时间块，时间格式 HH:MM – HH:MM，时长用 Xm 或 XhYm）\n\n\
 ## 分类统计\n| 类别 | 时长 | 占比 |\n|------|------|------|\n\
-（统计 coding/meeting/slack/wechat/feishu/email/browser/reading/design/app/other 各自总时长和百分比，跳过时长为 0 的类别）\n\n\
+（统计 coding/meeting/slack/wechat/feishu/email/browser/reading/writing/design/3d/media/data/system/other 各自总时长和百分比，跳过时长为 0 的类别）\n\n\
 ## 今日小结\n（2-3句总结，中文）"
     );
 

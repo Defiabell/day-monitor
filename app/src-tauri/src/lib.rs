@@ -1,87 +1,83 @@
+mod analyze;
+mod capture;
 mod commands;
 mod db;
+mod loop_runner;
 mod migration;
+mod power;
 mod report;
-mod sidecar;
+mod settings;
 mod state;
 mod stats;
 
-use std::path::PathBuf;
+use std::sync::Arc;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri_plugin_positioner::{Position, WindowExt};
 
 use crate::state::AppState;
 
-fn sidecar_path() -> PathBuf {
-    use std::os::unix::fs::PermissionsExt;
-    if cfg!(debug_assertions) {
-        // Dev: spawn the un-packaged Python via wrapper script
-        let proj = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .to_path_buf();
-        let wrapper = proj.join(".dev_sidecar.sh");
-        if !wrapper.exists() {
-            let py = proj.join("loop_entry.py");
-            let _ = std::fs::write(
-                &wrapper,
-                format!("#!/bin/sh\nexec python3 \"{}\"\n", py.display()),
-            );
-            let _ = std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o755));
+fn read_api_key() -> Option<String> {
+    if let Ok(k) = std::env::var("ANTHROPIC_API_KEY") {
+        if !k.is_empty() {
+            return Some(k);
         }
-        wrapper
-    } else {
-        // Prod: bundled sidecar binary (added in Plan 2 packaging)
-        std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|d| d.join("daymonitor-loop")))
-            .unwrap_or_else(|| PathBuf::from("daymonitor-loop"))
+    }
+    let env_path = dirs::home_dir()
+        .unwrap_or_default()
+        .join(".day-monitor")
+        .join(".env");
+    let content = std::fs::read_to_string(&env_path).ok()?;
+    for line in content.lines() {
+        if let Some(rest) = line.strip_prefix("ANTHROPIC_API_KEY=") {
+            return Some(rest.trim().trim_matches('"').to_string());
+        }
+    }
+    None
+}
+
+fn show_popover_at_tray(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("popover") {
+        // tauri-plugin-positioner: place under the tray icon
+        let _ = window.as_ref().window().move_window(Position::TrayCenter);
+        let _ = window.show();
+        let _ = window.set_focus();
+        return;
+    }
+
+    let builder = WebviewWindowBuilder::new(app, "popover", WebviewUrl::App("index.html".into()))
+        .title("Day Monitor")
+        .inner_size(200.0, 300.0)
+        .resizable(false)
+        .decorations(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .visible(false);
+    if let Ok(window) = builder.build() {
+        let _ = window.as_ref().window().move_window(Position::TrayCenter);
+        let _ = window.show();
+        let _ = window.set_focus();
+        // Auto-hide when the popover loses focus (user clicked elsewhere).
+        let app_handle = app.clone();
+        window.on_window_event(move |event| {
+            if let WindowEvent::Focused(false) = event {
+                if let Some(w) = app_handle.get_webview_window("popover") {
+                    let _ = w.hide();
+                }
+            }
+        });
     }
 }
 
 fn toggle_popover(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("popover") {
-        let visible = window.is_visible().unwrap_or(false);
-        if visible {
+        if window.is_visible().unwrap_or(false) {
             let _ = window.hide();
-        } else {
-            let _ = window.show();
-            let _ = window.set_focus();
+            return;
         }
-        return;
     }
-    // Position near the top-right of the primary monitor (where the menu bar lives)
-    let position = if let Some(monitor) = app.primary_monitor().ok().flatten() {
-        let size = monitor.size();
-        let scale = monitor.scale_factor();
-        let popover_w = (200.0 * scale) as i32;
-        // 30px from right edge, 30px from top
-        let x = size.width as i32 - popover_w - 30;
-        let y = 30;
-        Some(tauri::PhysicalPosition::new(x, y))
-    } else {
-        None
-    };
-
-    let mut builder =
-        WebviewWindowBuilder::new(app, "popover", WebviewUrl::App("index.html".into()))
-            .title("Day Monitor")
-            .inner_size(200.0, 300.0)
-            .resizable(false)
-            .decorations(false)
-            .always_on_top(true)
-            .skip_taskbar(true)
-            .visible(false);
-    if let Some(p) = position {
-        builder = builder.position(p.x as f64, p.y as f64);
-    }
-    if let Ok(window) = builder.build() {
-        let _ = window.show();
-        let _ = window.set_focus();
-    }
+    show_popover_at_tray(app);
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -92,7 +88,8 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
-        .manage(AppState::new())
+        .plugin(tauri_plugin_positioner::init())
+        .manage(Arc::new(AppState::new()))
         .setup(|app| {
             // Hide dock icon on macOS — pure menu bar app
             #[cfg(target_os = "macos")]
@@ -138,6 +135,8 @@ pub fn run() {
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
+                    // Tell positioner where the tray icon is so it can place popovers under it.
+                    tauri_plugin_positioner::on_tray_event(tray.app_handle(), &event);
                     if let TrayIconEvent::Click {
                         button: MouseButton::Left,
                         button_state: MouseButtonState::Up,
@@ -149,15 +148,19 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // Spawn the Python sidecar
-            let sp = sidecar_path();
-            let state: tauri::State<AppState> = app.state();
-            state
-                .sidecar
-                .lock()
-                .unwrap()
-                .start(&sp)
-                .map_err(|e| format!("failed to start sidecar: {e}"))?;
+            // Start the in-process monitoring loop (pure Rust — no sidecar)
+            let state: tauri::State<Arc<AppState>> = app.state();
+            let state_arc: Arc<AppState> = state.inner().clone();
+            match read_api_key() {
+                Some(key) => {
+                    loop_runner::spawn(state_arc, key);
+                }
+                None => {
+                    eprintln!(
+                        "[day-monitor] ANTHROPIC_API_KEY not set — open Settings to configure"
+                    );
+                }
+            }
 
             Ok(())
         })
@@ -171,6 +174,7 @@ pub fn run() {
             commands::get_timeline,
             commands::get_trends,
             commands::get_app_ranking,
+            commands::get_app_trends,
             commands::get_events,
             commands::list_categories,
             commands::generate_ai_report,
@@ -178,6 +182,9 @@ pub fn run() {
             commands::open_settings,
             commands::save_api_key,
             commands::get_api_key_set,
+            commands::get_settings,
+            commands::save_settings,
+            commands::get_cost_stats,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -10,8 +10,10 @@ function fmtDuration(secs: number): string {
 }
 
 function statusIndicator(s: MonitorStatus): string {
+  if (s.last_error) return `⚠ ${s.last_error.slice(0, 24)}`;
   switch (s.state) {
     case 'recording':
+      if (s.skip_reason) return `◐ ${s.skip_reason}`;
       return '● Recording';
     case 'paused':
       return '○ Paused';
@@ -26,12 +28,18 @@ export function Popover() {
   const [stats, setStats] = useState<TodayStats | null>(null);
   const [status, setStatus] = useState<MonitorStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [privacyAccepted, setPrivacyAccepted] = useState(true);
 
   const refresh = async () => {
     try {
-      const [s, st] = await Promise.all([api.todayStats(), api.status()]);
+      const [s, st, settings] = await Promise.all([
+        api.todayStats(),
+        api.status(),
+        api.settings(),
+      ]);
       setStats(s);
       setStatus(st);
+      setPrivacyAccepted(settings.privacy_accepted);
       setError(null);
     } catch (e) {
       setError(String(e));
@@ -81,6 +89,34 @@ export function Popover() {
     return (
       <div className="p-3 w-[200px] h-[300px] bg-white text-xs text-gray-500">
         Loading…
+      </div>
+    );
+  }
+
+  if (!privacyAccepted) {
+    return (
+      <div className="p-3 w-[200px] h-[300px] bg-white text-gray-900 flex flex-col text-xs">
+        <div className="font-semibold mb-2">⚠ 需要确认隐私协议</div>
+        <p className="text-[11px] leading-relaxed text-gray-700 mb-2">
+          本工具会每隔几秒截屏并发送给 Anthropic
+          Claude API 进行识别。建议不要在敏感场景使用。
+        </p>
+        <button
+          onClick={async () => {
+            const s = await api.settings();
+            await api.saveSettings({ ...s, privacy_accepted: true });
+            refresh();
+          }}
+          className="mt-auto py-1.5 text-xs bg-gray-900 text-white rounded hover:bg-gray-700"
+        >
+          我已知晓，开始监控
+        </button>
+        <button
+          onClick={handleOpenSettings}
+          className="mt-1 py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-50"
+        >
+          打开设置查看详情
+        </button>
       </div>
     );
   }

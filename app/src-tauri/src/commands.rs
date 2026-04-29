@@ -1,17 +1,33 @@
 use crate::db::{Db, Event};
 use crate::migration;
 use crate::report;
+use crate::settings::{self, Settings};
 use crate::state::AppState;
-use crate::stats::{self, AppUsage, TimelineSegment, TodayStats, TrendDay};
+use crate::stats::{self, AppTrendDay, AppUsage, TimelineSegment, TodayStats, TrendDay};
 use serde::Serialize;
 use std::sync::atomic::Ordering;
 use tauri::{Manager, State};
+
+#[derive(Debug, Serialize)]
+pub struct CostStats {
+    pub today_usd: f64,
+    pub today_calls: u32,
+    pub today_input_tokens: u32,
+    pub today_output_tokens: u32,
+    pub month_usd: f64,
+    pub month_calls: u32,
+    pub projected_month_usd: f64,
+    pub price_input_per_mtok: f64,
+    pub price_output_per_mtok: f64,
+}
 
 #[derive(Debug, Serialize)]
 pub struct MonitorStatus {
     pub state: String,
     pub message: Option<String>,
     pub pid: Option<u32>,
+    pub last_error: Option<String>,
+    pub skip_reason: Option<String>,
 }
 
 #[tauri::command]
@@ -21,45 +37,33 @@ pub async fn get_today_stats() -> Result<TodayStats, String> {
 }
 
 #[tauri::command]
-pub async fn get_status(state: State<'_, AppState>) -> Result<MonitorStatus, String> {
-    let mut sm = state.sidecar.lock().unwrap();
-    let alive = sm.is_alive();
-    let pid = sm.pid();
-    if !alive {
-        return Ok(MonitorStatus {
-            state: "error".into(),
-            message: Some("sidecar not running".into()),
-            pid: None,
-        });
-    }
+pub async fn get_status(state: State<'_, std::sync::Arc<AppState>>) -> Result<MonitorStatus, String> {
+    let pid = Some(std::process::id());
+    let last_error = state.last_error.read().unwrap().clone();
+    let skip_reason = state.skip_reason.read().unwrap().clone();
     if state.paused.load(Ordering::Relaxed) {
         Ok(MonitorStatus {
             state: "paused".into(),
             message: None,
             pid,
+            last_error,
+            skip_reason,
         })
     } else {
         Ok(MonitorStatus {
             state: "recording".into(),
             message: None,
             pid,
+            last_error,
+            skip_reason,
         })
     }
 }
 
 #[tauri::command]
-pub async fn toggle_pause(state: State<'_, AppState>) -> Result<MonitorStatus, String> {
-    {
-        let sm = state.sidecar.lock().unwrap();
-        let was_paused = state.paused.load(Ordering::Relaxed);
-        if was_paused {
-            sm.resume()?;
-            state.paused.store(false, Ordering::Relaxed);
-        } else {
-            sm.pause()?;
-            state.paused.store(true, Ordering::Relaxed);
-        }
-    }
+pub async fn toggle_pause(state: State<'_, std::sync::Arc<AppState>>) -> Result<MonitorStatus, String> {
+    let was_paused = state.paused.load(Ordering::Relaxed);
+    state.paused.store(!was_paused, Ordering::Relaxed);
     get_status(state).await
 }
 
@@ -95,6 +99,12 @@ pub async fn get_trends(days: u32) -> Result<Vec<TrendDay>, String> {
 pub async fn get_app_ranking(days: u32) -> Result<Vec<AppUsage>, String> {
     let db = Db::open(Db::default_path()).map_err(|e| e.to_string())?;
     stats::app_ranking(&db, days).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_app_trends(days: u32, top_n: Option<usize>) -> Result<Vec<AppTrendDay>, String> {
+    let db = Db::open(Db::default_path()).map_err(|e| e.to_string())?;
+    stats::app_trends(&db, days, top_n.unwrap_or(8)).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -218,4 +228,62 @@ pub async fn save_api_key(key: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn get_api_key_set() -> bool {
     read_api_key().is_ok()
+}
+
+#[tauri::command]
+pub async fn get_settings() -> Settings {
+    settings::get()
+}
+
+#[tauri::command]
+pub async fn save_settings(settings: Settings) -> Result<(), String> {
+    settings::save(&settings)
+}
+
+#[tauri::command]
+pub async fn get_cost_stats() -> Result<CostStats, String> {
+    use chrono::Datelike;
+    let now = chrono::Local::now();
+    let today_prefix = now.format("%Y-%m-%d").to_string();
+    let month_prefix = now.format("%Y-%m").to_string();
+    let day_of_month = now.day();
+
+    let db = Db::open(Db::default_path()).map_err(|e| e.to_string())?;
+    let (today_in, today_out, today_cost, today_calls) = db
+        .api_call_totals_for_prefix(&today_prefix)
+        .map_err(|e| e.to_string())?;
+    let (_m_in, _m_out, month_cost, month_calls) = db
+        .api_call_totals_for_prefix(&month_prefix)
+        .map_err(|e| e.to_string())?;
+
+    // Projected = current month spend / day-of-month * days-in-month
+    let days_in_month = days_in_current_month(now);
+    let projected = if day_of_month > 0 {
+        month_cost / day_of_month as f64 * days_in_month as f64
+    } else {
+        month_cost
+    };
+
+    Ok(CostStats {
+        today_usd: today_cost,
+        today_calls,
+        today_input_tokens: today_in,
+        today_output_tokens: today_out,
+        month_usd: month_cost,
+        month_calls,
+        projected_month_usd: projected,
+        price_input_per_mtok: crate::analyze::PRICE_INPUT_PER_MTOK,
+        price_output_per_mtok: crate::analyze::PRICE_OUTPUT_PER_MTOK,
+    })
+}
+
+fn days_in_current_month(now: chrono::DateTime<chrono::Local>) -> u32 {
+    use chrono::{Datelike, NaiveDate};
+    let year = now.year();
+    let month = now.month();
+    let (next_year, next_month) = if month == 12 { (year + 1, 1) } else { (year, month + 1) };
+    NaiveDate::from_ymd_opt(next_year, next_month, 1)
+        .and_then(|d| d.pred_opt())
+        .map(|d| d.day())
+        .unwrap_or(30)
 }

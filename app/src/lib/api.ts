@@ -5,7 +5,10 @@ import type {
   TimelineSegment,
   TrendDay,
   AppUsage,
+  AppTrendDay,
   Event,
+  Settings,
+  CostStats,
 } from './types';
 
 export const api = {
@@ -19,6 +22,8 @@ export const api = {
     invoke<TimelineSegment[]>('get_timeline', { date }),
   trends: (days: number) => invoke<TrendDay[]>('get_trends', { days }),
   appRanking: (days: number) => invoke<AppUsage[]>('get_app_ranking', { days }),
+  appTrends: (days: number, topN = 8) =>
+    invoke<AppTrendDay[]>('get_app_trends', { days, topN }),
   events: (date: string, search?: string, category?: string) =>
     invoke<Event[]>('get_events', { date, search, category }),
   categories: () => invoke<string[]>('list_categories'),
@@ -28,4 +33,7 @@ export const api = {
   openSettings: () => invoke<void>('open_settings'),
   saveApiKey: (key: string) => invoke<void>('save_api_key', { key }),
   apiKeySet: () => invoke<boolean>('get_api_key_set'),
+  settings: () => invoke<Settings>('get_settings'),
+  saveSettings: (settings: Settings) => invoke<void>('save_settings', { settings }),
+  costStats: () => invoke<CostStats>('get_cost_stats'),
 };
