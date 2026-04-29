@@ -7,6 +7,7 @@ mod state;
 mod stats;
 
 use std::path::PathBuf;
+use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
@@ -52,14 +53,35 @@ fn toggle_popover(app: &tauri::AppHandle) {
         }
         return;
     }
-    let _ = WebviewWindowBuilder::new(app, "popover", WebviewUrl::App("index.html".into()))
-        .title("Day Monitor")
-        .inner_size(200.0, 300.0)
-        .resizable(false)
-        .decorations(false)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .build();
+    // Position near the top-right of the primary monitor (where the menu bar lives)
+    let position = if let Some(monitor) = app.primary_monitor().ok().flatten() {
+        let size = monitor.size();
+        let scale = monitor.scale_factor();
+        let popover_w = (200.0 * scale) as i32;
+        // 30px from right edge, 30px from top
+        let x = size.width as i32 - popover_w - 30;
+        let y = 30;
+        Some(tauri::PhysicalPosition::new(x, y))
+    } else {
+        None
+    };
+
+    let mut builder =
+        WebviewWindowBuilder::new(app, "popover", WebviewUrl::App("index.html".into()))
+            .title("Day Monitor")
+            .inner_size(200.0, 300.0)
+            .resizable(false)
+            .decorations(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .visible(false);
+    if let Some(p) = position {
+        builder = builder.position(p.x as f64, p.y as f64);
+    }
+    if let Ok(window) = builder.build() {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -76,6 +98,17 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
+            // Tray right-click menu
+            let open_dashboard_item =
+                MenuItem::with_id(app, "open_dashboard", "Open Dashboard", true, None::<&str>)?;
+            let open_settings_item =
+                MenuItem::with_id(app, "open_settings", "Settings…", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "Quit", true, Some("Cmd+Q"))?;
+            let menu = Menu::with_items(
+                app,
+                &[&open_dashboard_item, &open_settings_item, &quit_item],
+            )?;
+
             // Tray icon — reuse the app's default window icon
             let icon = app
                 .default_window_icon()
@@ -84,6 +117,26 @@ pub fn run() {
             let _tray = TrayIconBuilder::with_id("main")
                 .icon(icon)
                 .icon_as_template(true)
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| match event.id().as_ref() {
+                    "open_dashboard" => {
+                        let h = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let _ = commands::open_dashboard(h).await;
+                        });
+                    }
+                    "open_settings" => {
+                        let h = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let _ = commands::open_settings(h).await;
+                        });
+                    }
+                    "quit" => {
+                        app.exit(0);
+                    }
+                    _ => {}
+                })
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::Click {
                         button: MouseButton::Left,

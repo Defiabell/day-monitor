@@ -53,6 +53,22 @@ export function Popover() {
     }
   };
 
+  const handleOpenDashboard = async () => {
+    try {
+      await api.openDashboard();
+    } catch (e) {
+      setError(`Dashboard: ${String(e)}`);
+    }
+  };
+
+  const handleOpenSettings = async () => {
+    try {
+      await api.openSettings();
+    } catch (e) {
+      setError(`Settings: ${String(e)}`);
+    }
+  };
+
   if (error) {
     return (
       <div className="p-3 w-[200px] h-[300px] bg-white text-xs text-red-600">
@@ -79,7 +95,7 @@ export function Popover() {
           {statusIndicator(status)}
         </span>
         <button
-          onClick={() => api.openSettings()}
+          onClick={handleOpenSettings}
           className="text-gray-400 hover:text-gray-700"
           title="Settings"
         >
@@ -133,7 +149,7 @@ export function Popover() {
           {status.state === 'paused' ? '▶ Resume' : '⏸ Pause'}
         </button>
         <button
-          onClick={() => api.openDashboard()}
+          onClick={handleOpenDashboard}
           className="flex-1 py-1 text-xs border border-gray-300 rounded hover:bg-gray-50"
         >
           Dashboard

@@ -134,34 +134,52 @@ pub async fn generate_ai_report(date: String, force: Option<bool>) -> Result<Str
 #[tauri::command]
 pub async fn open_dashboard(app: tauri::AppHandle) -> Result<(), String> {
     use tauri::{WebviewUrl, WebviewWindowBuilder};
+
+    // Switch to Regular activation policy so the window is focusable
+    #[cfg(target_os = "macos")]
+    let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+
     if let Some(window) = app.get_webview_window("dashboard") {
         let _ = window.show();
+        let _ = window.unminimize();
         let _ = window.set_focus();
         return Ok(());
     }
-    WebviewWindowBuilder::new(&app, "dashboard", WebviewUrl::App("dashboard.html".into()))
-        .title("Day Monitor")
-        .inner_size(1100.0, 700.0)
-        .resizable(true)
-        .build()
-        .map_err(|e| e.to_string())?;
+    let window =
+        WebviewWindowBuilder::new(&app, "dashboard", WebviewUrl::App("dashboard.html".into()))
+            .title("Day Monitor")
+            .inner_size(1100.0, 700.0)
+            .resizable(true)
+            .visible(true)
+            .build()
+            .map_err(|e| e.to_string())?;
+    let _ = window.show();
+    let _ = window.set_focus();
     Ok(())
 }
 
 #[tauri::command]
 pub async fn open_settings(app: tauri::AppHandle) -> Result<(), String> {
     use tauri::{WebviewUrl, WebviewWindowBuilder};
+
+    #[cfg(target_os = "macos")]
+    let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+
     if let Some(window) = app.get_webview_window("settings") {
         let _ = window.show();
         let _ = window.set_focus();
         return Ok(());
     }
-    WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App("settings.html".into()))
-        .title("Day Monitor Settings")
-        .inner_size(420.0, 360.0)
-        .resizable(false)
-        .build()
-        .map_err(|e| e.to_string())?;
+    let window =
+        WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App("settings.html".into()))
+            .title("Day Monitor Settings")
+            .inner_size(420.0, 360.0)
+            .resizable(false)
+            .visible(true)
+            .build()
+            .map_err(|e| e.to_string())?;
+    let _ = window.show();
+    let _ = window.set_focus();
     Ok(())
 }
 
