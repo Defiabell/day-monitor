@@ -1,6 +1,7 @@
 mod commands;
 mod db;
 mod migration;
+mod report;
 mod sidecar;
 mod state;
 mod stats;
@@ -65,6 +66,10 @@ fn toggle_popover(app: &tauri::AppHandle) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .manage(AppState::new())
         .setup(|app| {
             // Hide dock icon on macOS — pure menu bar app
@@ -110,6 +115,16 @@ pub fn run() {
             commands::check_legacy_launchd,
             commands::remove_legacy_launchd,
             commands::quit_app,
+            commands::get_timeline,
+            commands::get_trends,
+            commands::get_app_ranking,
+            commands::get_events,
+            commands::list_categories,
+            commands::generate_ai_report,
+            commands::open_dashboard,
+            commands::open_settings,
+            commands::save_api_key,
+            commands::get_api_key_set,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

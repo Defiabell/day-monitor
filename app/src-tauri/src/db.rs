@@ -62,6 +62,32 @@ impl Db {
         rows.collect()
     }
 
+    pub fn events_in_range(&self, from: &str, to: &str) -> Result<Vec<Event>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, timestamp, summary, category, app_name, duration_s
+             FROM events WHERE timestamp >= ?1 AND timestamp < ?2 ORDER BY timestamp",
+        )?;
+        let rows = stmt.query_map(params![from, to], |row| {
+            Ok(Event {
+                id: row.get(0)?,
+                timestamp: row.get(1)?,
+                summary: row.get(2)?,
+                category: row.get(3)?,
+                app_name: row.get(4)?,
+                duration_s: row.get::<_, i64>(5)? as u32,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn distinct_categories(&self) -> Result<Vec<String>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT DISTINCT category FROM events ORDER BY category")?;
+        let rows = stmt.query_map([], |row| row.get(0))?;
+        rows.collect()
+    }
+
     #[cfg(test)]
     pub(crate) fn from_conn(conn: Connection) -> Self {
         Db { conn }
@@ -94,6 +120,57 @@ mod tests {
         let db = open_in_memory();
         let events = db.events_for_date("2026-04-29").unwrap();
         assert_eq!(events.len(), 0);
+    }
+
+    #[test]
+    fn events_in_range_filters() {
+        let db = open_in_memory();
+        db.conn
+            .execute(
+                "INSERT INTO events (timestamp, image_hash, summary, category, app_name, duration_s)
+                 VALUES (?1, 'h', 's', 'coding', NULL, 60)",
+                params!["2026-04-28T09:00:00"],
+            )
+            .unwrap();
+        db.conn
+            .execute(
+                "INSERT INTO events (timestamp, image_hash, summary, category, app_name, duration_s)
+                 VALUES (?1, 'h', 's', 'coding', NULL, 60)",
+                params!["2026-04-29T09:00:00"],
+            )
+            .unwrap();
+        let r = db
+            .events_in_range("2026-04-29T00:00:00", "2026-04-30T00:00:00")
+            .unwrap();
+        assert_eq!(r.len(), 1);
+    }
+
+    #[test]
+    fn distinct_categories_returns_unique() {
+        let db = open_in_memory();
+        db.conn
+            .execute(
+                "INSERT INTO events (timestamp, image_hash, summary, category, app_name, duration_s)
+                 VALUES (?1, 'h', 's', 'coding', NULL, 60)",
+                params!["2026-04-29T09:00:00"],
+            )
+            .unwrap();
+        db.conn
+            .execute(
+                "INSERT INTO events (timestamp, image_hash, summary, category, app_name, duration_s)
+                 VALUES (?1, 'h', 's', 'slack', NULL, 60)",
+                params!["2026-04-29T10:00:00"],
+            )
+            .unwrap();
+        db.conn
+            .execute(
+                "INSERT INTO events (timestamp, image_hash, summary, category, app_name, duration_s)
+                 VALUES (?1, 'h', 's', 'coding', NULL, 60)",
+                params!["2026-04-29T11:00:00"],
+            )
+            .unwrap();
+        let cats = db.distinct_categories().unwrap();
+        assert_eq!(cats, vec!["coding".to_string(), "slack".to_string()]);
     }
 
     #[test]

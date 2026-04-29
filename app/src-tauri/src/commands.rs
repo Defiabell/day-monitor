@@ -1,10 +1,11 @@
-use crate::db::Db;
+use crate::db::{Db, Event};
 use crate::migration;
+use crate::report;
 use crate::state::AppState;
-use crate::stats::{self, TodayStats};
+use crate::stats::{self, AppUsage, TimelineSegment, TodayStats, TrendDay};
 use serde::Serialize;
 use std::sync::atomic::Ordering;
-use tauri::State;
+use tauri::{Manager, State};
 
 #[derive(Debug, Serialize)]
 pub struct MonitorStatus {
@@ -75,4 +76,128 @@ pub async fn remove_legacy_launchd() -> Result<(), String> {
 #[tauri::command]
 pub async fn quit_app(app: tauri::AppHandle) {
     app.exit(0);
+}
+
+#[tauri::command]
+pub async fn get_timeline(date: Option<String>) -> Result<Vec<TimelineSegment>, String> {
+    let db = Db::open(Db::default_path()).map_err(|e| e.to_string())?;
+    let date = date.unwrap_or_else(|| chrono::Local::now().format("%Y-%m-%d").to_string());
+    stats::timeline_for_date(&db, &date).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_trends(days: u32) -> Result<Vec<TrendDay>, String> {
+    let db = Db::open(Db::default_path()).map_err(|e| e.to_string())?;
+    stats::trends(&db, days).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_app_ranking(days: u32) -> Result<Vec<AppUsage>, String> {
+    let db = Db::open(Db::default_path()).map_err(|e| e.to_string())?;
+    stats::app_ranking(&db, days).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_events(
+    date: String,
+    search: Option<String>,
+    category: Option<String>,
+) -> Result<Vec<Event>, String> {
+    let db = Db::open(Db::default_path()).map_err(|e| e.to_string())?;
+    let mut events = db.events_for_date(&date).map_err(|e| e.to_string())?;
+    if let Some(s) = search.filter(|s| !s.is_empty()) {
+        let s = s.to_lowercase();
+        events.retain(|e| e.summary.to_lowercase().contains(&s));
+    }
+    if let Some(c) = category.filter(|c| !c.is_empty() && c != "all") {
+        events.retain(|e| e.category == c);
+    }
+    Ok(events)
+}
+
+#[tauri::command]
+pub async fn list_categories() -> Result<Vec<String>, String> {
+    let db = Db::open(Db::default_path()).map_err(|e| e.to_string())?;
+    db.distinct_categories().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn generate_ai_report(date: String, force: Option<bool>) -> Result<String, String> {
+    let api_key = read_api_key()?;
+    let events = {
+        let db = Db::open(Db::default_path()).map_err(|e| e.to_string())?;
+        db.events_for_date(&date).map_err(|e| e.to_string())?
+    };
+    report::generate_report(events, &date, &api_key, force.unwrap_or(false)).await
+}
+
+#[tauri::command]
+pub async fn open_dashboard(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::{WebviewUrl, WebviewWindowBuilder};
+    if let Some(window) = app.get_webview_window("dashboard") {
+        let _ = window.show();
+        let _ = window.set_focus();
+        return Ok(());
+    }
+    WebviewWindowBuilder::new(&app, "dashboard", WebviewUrl::App("dashboard.html".into()))
+        .title("Day Monitor")
+        .inner_size(1100.0, 700.0)
+        .resizable(true)
+        .build()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn open_settings(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::{WebviewUrl, WebviewWindowBuilder};
+    if let Some(window) = app.get_webview_window("settings") {
+        let _ = window.show();
+        let _ = window.set_focus();
+        return Ok(());
+    }
+    WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App("settings.html".into()))
+        .title("Day Monitor Settings")
+        .inner_size(420.0, 360.0)
+        .resizable(false)
+        .build()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn read_api_key() -> Result<String, String> {
+    if let Ok(k) = std::env::var("ANTHROPIC_API_KEY") {
+        if !k.is_empty() {
+            return Ok(k);
+        }
+    }
+    let env_path = dirs::home_dir()
+        .unwrap_or_default()
+        .join(".day-monitor")
+        .join(".env");
+    if let Ok(content) = std::fs::read_to_string(&env_path) {
+        for line in content.lines() {
+            if let Some(rest) = line.strip_prefix("ANTHROPIC_API_KEY=") {
+                return Ok(rest.trim().trim_matches('"').to_string());
+            }
+        }
+    }
+    Err("ANTHROPIC_API_KEY not set".into())
+}
+
+#[tauri::command]
+pub async fn save_api_key(key: String) -> Result<(), String> {
+    let env_path = dirs::home_dir()
+        .unwrap_or_default()
+        .join(".day-monitor")
+        .join(".env");
+    if let Some(parent) = env_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    std::fs::write(&env_path, format!("ANTHROPIC_API_KEY={}\n", key)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_api_key_set() -> bool {
+    read_api_key().is_ok()
 }
