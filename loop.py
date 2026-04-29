@@ -16,6 +16,7 @@ class MonitorLoop:
         self.client = client
         self.interval = interval
         self._running = True
+        self._paused = False
 
     def _tick(self) -> None:
         if not is_screen_active():
@@ -36,9 +37,12 @@ class MonitorLoop:
 
     def run(self) -> None:
         signal.signal(signal.SIGTERM, self._handle_sigterm)
+        signal.signal(signal.SIGUSR1, self._handle_pause)
+        signal.signal(signal.SIGUSR2, self._handle_resume)
         while self._running:
             try:
-                self._tick()
+                if not self._paused:
+                    self._tick()
             except Exception as e:
                 print(f'[day-monitor] error: {e}', file=sys.stderr)
             if self._running:
@@ -46,3 +50,9 @@ class MonitorLoop:
 
     def _handle_sigterm(self, signum, frame) -> None:
         self._running = False
+
+    def _handle_pause(self, signum, frame) -> None:
+        self._paused = True
+
+    def _handle_resume(self, signum, frame) -> None:
+        self._paused = False

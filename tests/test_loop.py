@@ -95,3 +95,42 @@ def test_loop_skips_tick_when_screen_inactive():
 
     assert client.messages.create.call_count == 0
     assert get_last_event(conn) is None
+
+
+def test_loop_paused_by_default_is_false():
+    loop = MonitorLoop(conn=init_db(':memory:'), client=make_mock_client(), interval=10)
+    assert loop._paused is False
+
+
+def test_handle_pause_sets_paused_true():
+    loop = MonitorLoop(conn=init_db(':memory:'), client=make_mock_client(), interval=10)
+    loop._handle_pause(0, None)
+    assert loop._paused is True
+
+
+def test_handle_resume_sets_paused_false():
+    loop = MonitorLoop(conn=init_db(':memory:'), client=make_mock_client(), interval=10)
+    loop._paused = True
+    loop._handle_resume(0, None)
+    assert loop._paused is False
+
+
+def test_run_skips_tick_when_paused(monkeypatch):
+    """run() should not call _tick when _paused is True."""
+    conn = init_db(':memory:')
+    client = make_mock_client()
+    loop = MonitorLoop(conn=conn, client=client, interval=0)
+    loop._paused = True
+
+    tick_calls = []
+    monkeypatch.setattr(loop, '_tick', lambda: tick_calls.append(1))
+
+    sleep_calls = []
+    def fake_sleep(s):
+        sleep_calls.append(s)
+        if len(sleep_calls) >= 2:
+            loop._running = False
+    monkeypatch.setattr('loop.time.sleep', fake_sleep)
+
+    loop.run()
+    assert tick_calls == []
