@@ -1,4 +1,9 @@
-.env
 __pycache__/
-*.pyc
+.dev_sidecar.sh
+.env
 .pytest_cache/
+*.pyc
+# Build artifacts (use GitHub Releases for distribution)
+app/src-tauri/binaries/
+dist/Day-Monitor-*.dmg
+dist/Day-Monitor-*.zip
