@@ -1,3 +1,4 @@
+import os
 import signal
 import sys
 import time
@@ -8,6 +9,14 @@ from capture import compute_hash, hash_distance, is_screen_active, resize_for_ap
 from storage import get_last_event, increment_last_duration, insert_event
 
 DEDUP_THRESHOLD = 12
+
+# Remember the parent at startup. If it disappears (PPID becomes 1, init/launchd),
+# the parent app died and we should self-terminate to avoid becoming a zombie monitor.
+_INITIAL_PPID = os.getppid()
+
+
+def parent_alive() -> bool:
+    return os.getppid() == _INITIAL_PPID
 
 
 class MonitorLoop:
@@ -44,6 +53,10 @@ class MonitorLoop:
         signal.signal(signal.SIGUSR1, self._handle_pause)
         signal.signal(signal.SIGUSR2, self._handle_resume)
         while self._running:
+            if not parent_alive():
+                # Parent app exited — bail out instead of becoming an orphan.
+                self._running = False
+                break
             try:
                 if not self._paused:
                     self._tick()

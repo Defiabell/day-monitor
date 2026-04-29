@@ -1,230 +1,159 @@
-# day-monitor
+# Day Monitor
 
-macOS 工作活动自动监控工具。每 10 秒截一次屏，用 Claude Haiku（视觉模型）识别你在做什么，自动去重、分类，每天生成时间轴 + 分类统计日报。
+> macOS 菜单栏小工具：自动追踪你一天的工作内容，本地分析后生成可视化日报。
+
+每 ~20 秒截一次屏 → Claude Haiku 识别活动类型 → SQLite 记录 → 仪表板展示时间轴/分类/趋势/AI 日报。
+
+[简体中文](#简体中文) · [English](#english)
 
 ---
 
-## 快速开始
+## 简体中文
 
-**环境要求：** macOS、Python 3.9+、Anthropic API Key
+### 截图预览
+
+（截图占位 - 实际使用时菜单栏弹出 popover 显示今日总时长 + 分类占比；点 Dashboard 进入完整窗口看 6 个视图）
+
+### 这个项目能做什么
+
+- 🕐 **自动追踪时间** — 不需要手动开关 timer
+- 🤖 **AI 识别活动** — Claude 看截图直接告诉你"在 VS Code 写代码"或"在微信回消息"
+- 📊 **可视化** — 时间轴、分类饼图、跨日趋势、应用排行
+- 💰 **可控成本** — 内置 token / 费用统计 + 月度预算上限，避免 API bill 失控
+- 🔒 **隐私本地** — 截图不入库（只存 hash 和文字描述），数据全在本机
+
+### 系统要求
+
+- **macOS 12+** (Apple Silicon Mac，arm64-only 当前版本)
+- **Anthropic API Key** ([注册](https://console.anthropic.com)，新用户有 $5 免费额度)
+
+### 快速开始
+
+**最简单：[下载预编译 .app](dist/Day-Monitor-0.1.0-arm64.zip)**（见 [INSTALL.md](dist/INSTALL.md)）
+
+**自己编译：**
 
 ```bash
-# 1. 安装依赖
-cd personal-projects/day-monitor
-pip install -r requirements.txt
+git clone https://github.com/yourname/day-monitor
+cd day-monitor
 
-# 2. 配置 API Key（只需一次）
-echo 'ANTHROPIC_API_KEY=sk-ant-你的key' > .env
+# Rust 工具链
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
-# 3. 启动监控
-python monitor.py start
+# 前端依赖
+cd app && yarn install
 
-# 4. 下班后生成日报
-python monitor.py report
+# 开发模式
+yarn tauri dev
+
+# 打包发布
+yarn tauri build
+# 产物：app/src-tauri/target/release/bundle/macos/Day Monitor.app
 ```
 
----
-
-## 命令参考
-
-| 命令 | 说明 |
-|------|------|
-| `python monitor.py start` | 启动后台监控 |
-| `python monitor.py stop` | 停止监控 |
-| `python monitor.py status` | 打印今日活动概况（随时可查，不生成文件） |
-| `python monitor.py status --date 2026-04-27` | 查看指定日期概况 |
-| `python monitor.py report` | 生成今天的完整日报（Markdown 文件） |
-| `python monitor.py report --date 2026-04-27` | 生成指定日期的日报 |
-| `python monitor.py install` | 安装 launchd，登录时自动启动 |
-| `python monitor.py uninstall` | 卸载 launchd 自启 |
-
----
-
-## 日报格式
-
-报告保存到 `~/Documents/day-monitor/YYYY-MM-DD.md`，包含三个部分：
-
-```markdown
-# 工作日报 2026-04-28
-
-## 时间轴
-| 时间 | 时长 | 活动 |
-|------|------|------|
-| 09:02 – 09:47 | 45m  | 在 Slack 处理消息，回复团队问题 |
-| 09:47 – 11:30 | 1h43m | 在 VS Code 写 Python，开发 day-monitor |
-| 14:00 – 15:20 | 1h20m | Zoom 视频会议 |
-
-## 分类统计
-| 类别 | 时长 | 占比 |
-|------|------|------|
-| coding | 3h20m | 42% |
-| meeting | 1h45m | 22% |
-| ...   | ...  | ... |
-
-## 今日小结
-今天主要时间用于开发工作...
-```
-
----
-
-## 工作原理
+### 架构
 
 ```
-每 10 秒截图
-    ↓
-感知哈希去重（屏幕无变化则跳过，累计时长）
-    ↓
-Claude Haiku 视觉分析（返回活动描述 + 类别）
-    ↓
-写入 SQLite（~/.day-monitor/monitor.db）
-    ↓
-按需生成 Markdown 日报
+┌────────────────────────────────────────────────┐
+│  Day Monitor.app  (Tauri 2 / Rust + React)      │
+│                                                   │
+│  Menu Bar ──click──> Popover (200×300)          │
+│      │                                           │
+│      ├──> Dashboard (1100×700, 6 views)         │
+│      └──> Settings (interval, budget, etc.)     │
+│                                                   │
+│  Rust Backend                                    │
+│   ├─ tokio loop: capture → hash → analyze       │
+│   ├─ /usr/sbin/screencapture (native, no Python)│
+│   ├─ Claude Haiku via reqwest                   │
+│   └─ rusqlite (~/.day-monitor/monitor.db)       │
+└────────────────────────────────────────────────┘
 ```
 
-**去重机制：** 计算截图的感知哈希（perceptual hash），与上一张比较汉明距离。距离 < 8（屏幕基本没变）则跳过 API 调用，把上一条记录的时长 +10s。实测可跳过 60–70% 的截图。
-
----
-
-## 活动分类
-
-| 类别 | 触发场景 |
-|------|---------|
-| `coding` | VS Code、Cursor、终端、Xcode、任何 IDE |
-| `meeting` | Zoom、Google Meet、腾讯会议等视频/语音会议 |
-| `slack` | Slack |
-| `wechat` | 微信（WeChat） |
-| `feishu` | 飞书（Lark） |
-| `email` | Mail、Outlook、Gmail 网页版 |
-| `browser` | 浏览器中的网页浏览 |
-| `reading` | 文档、PDF、技术文章、Notion |
-| `design` | Figma、Sketch 等设计工具 |
-| `app` | 其他桌面应用（Meshy、产品测试、系统设置等） |
-| `other` | 以上均不符合 |
-
----
-
-## 数据与文件
-
-| 路径 | 内容 |
-|------|------|
-| `.env` | API Key（不提交 git） |
-| `~/.day-monitor/monitor.db` | SQLite 数据库 |
-| `~/.day-monitor/monitor.pid` | 后台进程 PID |
-| `~/.day-monitor/stdout.log` | daemon 标准输出 |
-| `~/.day-monitor/stderr.log` | daemon 错误日志 |
-| `~/Documents/day-monitor/` | 生成的日报文件 |
-| `~/Library/LaunchAgents/com.daymonitor.plist` | launchd 自启配置 |
-
-**数据保留：** 超过 30 天的记录在每次 `start` 时自动清理。
-
----
-
-## 费用估算
-
-| 场景 | API 调用次数/天 | 费用/天 |
-|------|--------------|--------|
-| 最坏（无去重） | ~2,880 次（8h） | ~$2.9 |
-| 实际（含去重） | ~900 次 | ~$0.9 |
-
-基于 Claude Haiku 价格，含图片 token。
-
----
-
-## 项目结构
+### 项目结构
 
 ```
 day-monitor/
-├── monitor.py      # CLI 入口（click）：start / stop / report / install
-├── loop.py         # 监控主循环（截图 → 去重 → 分析 → 存储）
-├── capture.py      # 截图（screencapture）+ 感知哈希
-├── analyze.py      # Claude Haiku 视觉 API 调用
-├── storage.py      # SQLite 读写（init / insert / query / cleanup）
-├── report.py       # 日报生成（Claude Haiku 聚合 → Markdown）
-├── daemon.py       # launchd plist 安装/卸载
-├── tests/          # 单元测试（23 个，mock API，纯本地运行）
-├── .env            # API Key（gitignored）
-├── .gitignore
-└── requirements.txt
+├── app/                          # Tauri app
+│   ├── src/                       # React + TypeScript frontend
+│   │   ├── popover/               # 菜单栏 popover
+│   │   ├── dashboard/             # 6 个视图
+│   │   ├── settings/              # 设置窗口
+│   │   └── lib/                   # 共享类型 + invoke 包装
+│   └── src-tauri/src/             # Rust backend
+│       ├── lib.rs                 # 入口、tray、窗口管理
+│       ├── loop_runner.rs         # tokio 监控循环
+│       ├── capture.rs             # 截屏 + 感知哈希
+│       ├── analyze.rs             # Claude API 调用
+│       ├── db.rs                  # SQLite 读写
+│       ├── stats.rs               # 数据聚合
+│       ├── report.rs              # AI 日报生成
+│       ├── settings.rs            # 用户配置
+│       └── commands.rs            # Tauri commands
+├── dist/                          # 发布包（zip + 安装脚本 + 用户文档）
+├── docs/                          # 设计文档
+├── LICENSE                         # MIT
+├── PRIVACY.md                      # 隐私政策
+└── README.md                       # 本文件
 ```
+
+### 配置项
+
+进 Settings 窗口可调：
+
+| 项 | 默认 | 说明 |
+|----|------|------|
+| 采集间隔 | 20s | 越短数据越细，越长越省钱 |
+| 截图分辨率 | 640px | 影响 token 成本（直接 ~50%）|
+| 去重阈值 | 12 | 屏幕几乎没变就跳过，0~20 |
+| 数据保留 | 30 天 | 老数据自动清理 |
+| 月度预算 | 0 (无限) | 超限自动暂停 API 调用 |
+
+### 隐私
+
+详见 [PRIVACY.md](PRIVACY.md)。简要：
+
+- 截图**只在 RAM 中处理**，分析完立即丢弃
+- 数据库存的是：时间戳 + 感知哈希 + 一句中文描述 + 分类，**没有图片本身**
+- 截图发给 Anthropic 进行分析，不发给本项目作者
+- 屏幕关闭/锁屏时自动跳过
+
+### 贡献
+
+欢迎 PR。关注的方向：
+
+- Intel Mac (x86_64) 支持（universal binary）
+- Linux / Windows 支持（需要替换 screencapture）
+- 多 LLM 后端（OpenAI、ollama 本地模型）
+- i18n（当前 prompt 和 UI 都是中文）
+- 更细粒度设置（工作时段、低电量暂停）
+
+### 许可证
+
+MIT License — 见 [LICENSE](LICENSE)。
 
 ---
 
-## 查看原始数据
+## English
 
-**方式一：DB Browser for SQLite（GUI，推荐）**
+### What it does
 
-```bash
-brew install --cask db-browser-for-sqlite
-open -a "DB Browser for SQLite" ~/.day-monitor/monitor.db
-```
+A macOS menu-bar app that takes a screenshot every ~20 seconds, sends it to Claude Haiku to identify what you're doing, and stores structured activity data locally for daily reports and visualizations.
 
-打开后点 **Browse Data → events 表** 即可浏览所有记录。
+### Requirements
 
-**方式二：命令行**
+- macOS 12+ (Apple Silicon, arm64)
+- Anthropic API key
 
-```bash
-# 查看最近 20 条记录
-sqlite3 ~/.day-monitor/monitor.db \
-  "SELECT timestamp, category, summary, duration_s FROM events ORDER BY timestamp DESC LIMIT 20"
-
-# 统计今日各分类时长（秒）
-sqlite3 ~/.day-monitor/monitor.db \
-  "SELECT category, SUM(duration_s) FROM events WHERE timestamp LIKE '$(date +%Y-%m-%d)%' GROUP BY category ORDER BY 2 DESC"
-```
-
----
-
-## 开发
+### Build
 
 ```bash
-# 运行所有测试（无需 API Key，全部 mock）
-python -m pytest -v
-
-# 查看监控日志（daemon 模式）
-tail -f ~/.day-monitor/stderr.log
+git clone https://github.com/yourname/day-monitor
+cd day-monitor/app
+yarn install
+yarn tauri build
 ```
 
----
+### License
 
-## 常见问题
-
-**Q：监控已在运行，如何确认？**
-```bash
-cat ~/.day-monitor/monitor.pid   # 查看 PID
-ps aux | grep monitor.py         # 确认进程存在
-```
-
-**Q：想随时看今天进展怎么办？**
-
-```bash
-python monitor.py status
-```
-
-输出示例：
-```
-今日概况 2026-04-28  （共 3h20m）
-
-分类统计：
-  coding             1h23m   42%  ████████
-  meeting              55m   27%  █████
-  communication        30m   15%  ███
-  browsing             22m   11%  ██
-  other                10m    5%  █
-
-最近 10 条活动：
-  14:30  [coding       ]  在 VS Code 写 Python，修改 monitor.py
-  14:31  [communication]  在 Slack 回复消息
-  ...
-```
-
-**Q：报告显示"No events found"？**
-
-确认监控已运行（`python monitor.py start`）且当天有截图数据。新启动后需等待至少 10 秒才有第一条记录。
-
-**Q：屏幕共享/敏感内容怎么办？**
-
-截图只在本机处理，图片不存储（只保留哈希值和文字描述），原始截图在分析后立即删除。API 调用会将截图发送给 Anthropic 服务器，请注意工作内容的隐私边界。
-
-**Q：launchd 自启后 API Key 从哪里读？**
-
-`monitor.py` 启动时自动从脚本同目录的 `.env` 文件加载，launchd 无需额外配置。
+MIT.
