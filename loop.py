@@ -33,9 +33,10 @@ class MonitorLoop:
 
         result = analyze_screenshot(resized, self.client)
         ts = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+        # `or None` coerces "" / null to NULL so app_name stays clean
         insert_event(
             self.conn, ts, new_hash,
-            result['summary'], result['category'], result.get('app'),
+            result['summary'], result['category'], result.get('app') or None,
         )
 
     def run(self) -> None:

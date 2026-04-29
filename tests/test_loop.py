@@ -182,3 +182,24 @@ def test_loop_passes_app_name_to_insert_event():
     rows = conn.execute("SELECT app_name FROM events").fetchall()
     assert len(rows) == 1
     assert rows[0][0] == 'VS Code'
+
+
+def test_loop_coerces_empty_app_to_null():
+    """Model returning app: '' should be stored as NULL, not empty string."""
+    conn = init_db(':memory:')
+    mock_content = MagicMock()
+    mock_content.text = '{"summary": "x", "category": "other", "app": ""}'
+    mock_response = MagicMock()
+    mock_response.content = [mock_content]
+    client = MagicMock()
+    client.messages.create.return_value = mock_response
+
+    loop = MonitorLoop(conn=conn, client=client, interval=10)
+    with patch('loop.is_screen_active', return_value=True), \
+         patch('loop.take_screenshot', return_value=make_png()), \
+         patch('loop.resize_for_api', return_value=make_png()):
+        loop._tick()
+
+    rows = conn.execute("SELECT app_name FROM events").fetchall()
+    assert len(rows) == 1
+    assert rows[0][0] is None
