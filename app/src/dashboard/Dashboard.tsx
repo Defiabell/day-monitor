@@ -56,7 +56,11 @@ export function Dashboard() {
             {([1, 7, 30] as const).map((d) => (
               <button
                 key={d}
-                onClick={() => setDays(d)}
+                onClick={() => {
+                  setDays(d);
+                  // 点 Today 时把右上角日期也重置成今天
+                  if (d === 1) setDate(todayStr());
+                }}
                 className={`px-3 py-1 text-xs rounded border ${
                   days === d
                     ? 'bg-gray-900 text-white border-gray-900'
