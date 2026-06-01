@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Day Monitor — Dashboard Preview</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  html, body { margin: 0; padding: 0; height: 700px; overflow: hidden; }
+</style>
+</head>
+<body>
+<div class="flex h-screen bg-gray-50 text-gray-900 font-sans" style="height:700px;width:1100px;">
+  <!-- Sidebar -->
+  <aside class="w-44 bg-white border-r border-gray-200 flex flex-col flex-shrink-0">
+    <div class="p-4 text-base font-semibold border-b border-gray-200">☕ Day Monitor</div>
+    <nav class="flex-1 p-2 space-y-1">
+      <button class="w-full text-left px-3 py-2 rounded text-sm flex items-center gap-2 bg-gray-100 font-medium">
+        <span>📊</span> Timeline
+      </button>
+      <button class="w-full text-left px-3 py-2 rounded text-sm flex items-center gap-2 hover:bg-gray-50">
+        <span>🥧</span> Categories
+      </button>
+      <button class="w-full text-left px-3 py-2 rounded text-sm flex items-center gap-2 hover:bg-gray-50">
+        <span>📈</span> Trends
+      </button>
+      <button class="w-full text-left px-3 py-2 rounded text-sm flex items-center gap-2 hover:bg-gray-50">
+        <span>📱</span> Apps
+      </button>
+      <button class="w-full text-left px-3 py-2 rounded text-sm flex items-center gap-2 hover:bg-gray-50">
+        <span>📋</span> Events
+      </button>
+      <button class="w-full text-left px-3 py-2 rounded text-sm flex items-center gap-2 hover:bg-gray-50">
+        <span>✨</span> AI Report
+      </button>
+    </nav>
+  </aside>
+
+  <!-- Main -->
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <header class="flex items-center gap-3 px-6 py-3 border-b border-gray-200 bg-white">
+      <div class="flex gap-1">
+        <button class="px-3 py-1 text-xs rounded border bg-gray-900 text-white border-gray-900">Today</button>
+        <button class="px-3 py-1 text-xs rounded border border-gray-300 hover:bg-gray-100">7d</button>
+        <button class="px-3 py-1 text-xs rounded border border-gray-300 hover:bg-gray-100">30d</button>
+      </div>
+      <input type="date" value="2026-06-01" class="ml-auto text-sm border border-gray-300 rounded px-2 py-1"/>
+    </header>
+
+    <main class="flex-1 overflow-auto p-6">
+      <!-- Timeline View -->
+      <h2 class="text-lg font-semibold mb-4">2026-06-01 Timeline</h2>
+
+      <!-- Timeline bar -->
+      <div class="relative bg-white border border-gray-200 rounded p-4 mb-6">
+        <div class="relative h-12 bg-gray-100 rounded overflow-hidden">
+          <!-- 09:00-09:20 email -->
+          <div class="absolute top-0 bottom-0" style="left:0%;width:3.3%;background:#f59e0b;" title="09:00–09:20 email: 查看邮件，回复 PR 评论 (20m)"></div>
+          <!-- 09:20-11:30 coding -->
+          <div class="absolute top-0 bottom-0" style="left:3.3%;width:21.7%;background:#3b82f6;" title="09:20–11:30 coding: 在 VS Code 写 Python 代码 (2h10m)"></div>
+          <!-- 11:30-12:00 meeting -->
+          <div class="absolute top-0 bottom-0" style="left:25%;width:5%;background:#ef4444;" title="11:30–12:00 meeting: Zoom 周会 (30m)"></div>
+          <!-- 12:00-12:30 browser -->
+          <div class="absolute top-0 bottom-0" style="left:30%;width:5%;background:#06b6d4;" title="12:00–12:30 browser: 浏览 Hacker News (30m)"></div>
+          <!-- 12:30-13:30 gap (lunch) -->
+          <!-- 13:30-14:00 slack -->
+          <div class="absolute top-0 bottom-0" style="left:45%;width:5%;background:#a855f7;" title="13:30–14:00 slack: 回复 Slack 消息 (30m)"></div>
+          <!-- 14:00-16:30 coding -->
+          <div class="absolute top-0 bottom-0" style="left:50%;width:25%;background:#3b82f6;" title="14:00–16:30 coding: 在 VS Code 调试 Rust 代码 (2h30m)"></div>
+          <!-- 16:30-17:00 design -->
+          <div class="absolute top-0 bottom-0" style="left:75%;width:5%;background:#ec4899;" title="16:30–17:00 design: 在 Figma 设计 UI 原型 (30m)"></div>
+          <!-- 17:00-17:15 email -->
+          <div class="absolute top-0 bottom-0" style="left:80%;width:2.5%;background:#f59e0b;" title="17:00–17:15 email: 发送工作总结 (15m)"></div>
+          <!-- 17:15-18:00 browser -->
+          <div class="absolute top-0 bottom-0" style="left:82.5%;width:7.5%;background:#06b6d4;" title="17:15–18:00 browser: 在 Chrome 查阅文档 (45m)"></div>
+        </div>
+        <div class="flex justify-between text-xs text-gray-500 mt-1">
+          <span>08:30</span>
+          <span>18:30</span>
+        </div>
+      </div>
+
+      <!-- Timeline table -->
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-left text-xs text-gray-500 border-b">
+            <th class="py-2">Start–End</th>
+            <th>Duration</th>
+            <th>Category</th>
+            <th>Activity</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="border-b border-gray-100">
+            <td class="py-2 font-mono">17:15–18:00</td>
+            <td>45m</td>
+            <td><span class="inline-block px-2 py-0.5 rounded text-xs text-white" style="background:#06b6d4">browser</span></td>
+            <td>在 Chrome 查阅 Rust async 官方文档</td>
+          </tr>
+          <tr class="border-b border-gray-100">
+            <td class="py-2 font-mono">17:00–17:15</td>
+            <td>15m</td>
+            <td><span class="inline-block px-2 py-0.5 rounded text-xs text-white" style="background:#f59e0b">email</span></td>
+            <td>发送今日工作总结邮件</td>
+          </tr>
+          <tr class="border-b border-gray-100">
+            <td class="py-2 font-mono">16:30–17:00</td>
+            <td>30m</td>
+            <td><span class="inline-block px-2 py-0.5 rounded text-xs text-white" style="background:#ec4899">design</span></td>
+            <td>在 Figma 设计 Dashboard UI 原型</td>
+          </tr>
+          <tr class="border-b border-gray-100">
+            <td class="py-2 font-mono">14:00–16:30</td>
+            <td>2h30m</td>
+            <td><span class="inline-block px-2 py-0.5 rounded text-xs text-white" style="background:#3b82f6">coding</span></td>
+            <td>在 VS Code 调试 Rust 后端，修复 SQLite 数据聚合 bug</td>
+          </tr>
+          <tr class="border-b border-gray-100">
+            <td class="py-2 font-mono">13:30–14:00</td>
+            <td>30m</td>
+            <td><span class="inline-block px-2 py-0.5 rounded text-xs text-white" style="background:#a855f7">slack</span></td>
+            <td>在 Slack 回复团队消息，讨论 PR review</td>
+          </tr>
+          <tr class="border-b border-gray-100">
+            <td class="py-2 font-mono">12:00–12:30</td>
+            <td>30m</td>
+            <td><span class="inline-block px-2 py-0.5 rounded text-xs text-white" style="background:#06b6d4">browser</span></td>
+            <td>浏览 Hacker News，阅读技术文章</td>
+          </tr>
+          <tr class="border-b border-gray-100">
+            <td class="py-2 font-mono">11:30–12:00</td>
+            <td>30m</td>
+            <td><span class="inline-block px-2 py-0.5 rounded text-xs text-white" style="background:#ef4444">meeting</span></td>
+            <td>Zoom 周会，同步本周进度</td>
+          </tr>
+          <tr class="border-b border-gray-100">
+            <td class="py-2 font-mono">09:20–11:30</td>
+            <td>2h10m</td>
+            <td><span class="inline-block px-2 py-0.5 rounded text-xs text-white" style="background:#3b82f6">coding</span></td>
+            <td>在 VS Code 写 Python 代码，Day Monitor API 开发</td>
+          </tr>
+          <tr class="border-b border-gray-100">
+            <td class="py-2 font-mono">09:00–09:20</td>
+            <td>20m</td>
+            <td><span class="inline-block px-2 py-0.5 rounded text-xs text-white" style="background:#f59e0b">email</span></td>
+            <td>查看邮件，回复昨日 PR 评论</td>
+          </tr>
+        </tbody>
+      </table>
+    </main>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Day Monitor — Popover Preview</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { background: transparent; margin: 0; padding: 0; }
+  .popover-shadow { box-shadow: 0 10px 40px rgba(0,0,0,0.18); }
+</style>
+</head>
+<body>
+<div style="width:200px;height:300px;" class="bg-white text-gray-900 flex flex-col popover-shadow rounded-xl overflow-hidden border border-gray-200">
+  <!-- header -->
+  <div class="flex items-center justify-between text-xs px-3 pt-3 pb-1">
+    <span class="font-medium text-green-600">● Recording</span>
+    <span class="text-gray-400">⚙</span>
+  </div>
+  <div class="px-3 pb-3 flex-1 flex flex-col">
+    <!-- total time -->
+    <div class="my-2">
+      <div class="text-[10px] text-gray-500 uppercase tracking-wide">Today</div>
+      <div class="text-2xl font-bold leading-tight">6h 38m</div>
+    </div>
+
+    <hr class="border-gray-200"/>
+
+    <!-- categories -->
+    <div class="my-2 flex-1 overflow-hidden space-y-0.5">
+      <div class="flex justify-between text-[11px]">
+        <span class="font-medium">coding</span>
+        <span class="text-gray-600">3h 20m (50%)</span>
+      </div>
+      <div class="flex justify-between text-[11px]">
+        <span class="font-medium">browser</span>
+        <span class="text-gray-600">1h 18m (20%)</span>
+      </div>
+      <div class="flex justify-between text-[11px]">
+        <span class="font-medium">slack</span>
+        <span class="text-gray-600">48m (12%)</span>
+      </div>
+      <div class="flex justify-between text-[11px]">
+        <span class="font-medium">meeting</span>
+        <span class="text-gray-600">42m (10%)</span>
+      </div>
+      <div class="text-[10px] text-gray-400">… +3 more</div>
+    </div>
+
+    <!-- current activity -->
+    <div class="text-[10px] text-gray-700 mb-2 truncate">
+      Now: 在 VS Code 写 Rust 代码 [coding]
+    </div>
+
+    <!-- buttons -->
+    <div class="flex gap-1.5">
+      <button class="flex-1 py-1 text-xs border border-gray-300 rounded hover:bg-gray-50">⏸ Pause</button>
+      <button class="flex-1 py-1 text-xs border border-gray-300 rounded hover:bg-gray-50">Dashboard</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>

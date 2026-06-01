@@ -12,7 +12,21 @@
 
 ### 截图预览
 
-（截图占位 - 实际使用时菜单栏弹出 popover 显示今日总时长 + 分类占比；点 Dashboard 进入完整窗口看 6 个视图）
+**菜单栏 Popover** — 随时查看今日进度，一键暂停或跳转 Dashboard：
+
+<img src="docs/screenshots/popover.png" width="200" alt="Popover"/>
+
+**Dashboard · Timeline** — 全天时间轴 + 活动明细表：
+
+<img src="docs/screenshots/dashboard_timeline.png" width="800" alt="Dashboard Timeline"/>
+
+**Dashboard · Categories** — 分类占比环形图 + 进度条：
+
+<img src="docs/screenshots/dashboard_categories.png" width="800" alt="Dashboard Categories"/>
+
+**Dashboard · AI Report** — Claude 生成的每日工作分析报告：
+
+<img src="docs/screenshots/dashboard_aireport.png" width="800" alt="AI Report"/>
 
 ### 这个项目能做什么
 
@@ -109,14 +123,45 @@ day-monitor/
 | 数据保留 | 30 天 | 老数据自动清理 |
 | 月度预算 | 0 (无限) | 超限自动暂停 API 调用 |
 
-### 隐私
+### 隐私 & 数据安全
 
-详见 [PRIVACY.md](PRIVACY.md)。简要：
+> **一句话：所有记录数据存在你本机，作者拿不到你的任何数据。**
 
-- 截图**只在 RAM 中处理**，分析完立即丢弃
-- 数据库存的是：时间戳 + 感知哈希 + 一句中文描述 + 分类，**没有图片本身**
-- 截图发给 Anthropic 进行分析，不发给本项目作者
-- 屏幕关闭/锁屏时自动跳过
+| 数据项 | 存储位置 | 说明 |
+|--------|---------|------|
+| 截图本身 | ❌ 不存储 | 只在 RAM 里处理，分析完立即丢弃 |
+| 感知哈希 | `~/.day-monitor/monitor.db` | 用于去重，无法还原图片 |
+| 活动描述 | `~/.day-monitor/monitor.db` | 一句话文字，如"在 VS Code 写代码" |
+| API Key | `~/.day-monitor/.env` | 只在本机，从不上传 |
+| AI 日报 | `~/Documents/day-monitor/` | 纯本地文件 |
+
+**数据流向：**
+
+```
+屏幕截图 → RAM 处理 → Anthropic Claude API（识别活动）→ 文字描述写入本地 SQLite
+                 ↓
+           截图立即丢弃（不落盘）
+```
+
+- **本项目作者** 收不到你的任何数据（无 telemetry，完全开源可审计）
+- **Anthropic** 会收到压缩后的截图用于识别，适用其[隐私政策](https://www.anthropic.com/privacy)
+- 随时 `rm -rf ~/.day-monitor` 可彻底删除所有本地数据
+
+详见 [PRIVACY.md](PRIVACY.md)。
+
+### 开发 & Mock 数据
+
+本地开发时可以用脚本快速填充 7 天的模拟数据，无需跑满一周：
+
+```bash
+# 初始化 mock 数据（不覆盖已有数据）
+python3 scripts/seed_mock_data.py
+
+# 重置并重新生成（--days 控制天数）
+python3 scripts/seed_mock_data.py --reset --days 30
+```
+
+数据写入 `~/.day-monitor/monitor.db`，启动 App 后即可看到有数据的 Dashboard。
 
 ### 贡献
 
@@ -139,6 +184,34 @@ MIT License — 见 [LICENSE](LICENSE)。
 ### What it does
 
 A macOS menu-bar app that takes a screenshot every ~20 seconds, sends it to Claude Haiku to identify what you're doing, and stores structured activity data locally for daily reports and visualizations.
+
+| Feature | Details |
+|---------|---------|
+| Auto-tracking | No timers to start/stop — runs in the background |
+| AI recognition | Claude sees the screenshot and labels it: "coding in VS Code", "replying on Slack" |
+| 6 dashboard views | Timeline · Categories · Trends · App ranking · Events · AI daily report |
+| Cost control | Built-in token / cost stats + monthly budget cap |
+| Privacy-first | **All data stays on your machine.** Screenshots are never stored — only a one-line text description per capture is written to a local SQLite database. |
+
+### Screenshots
+
+<img src="docs/screenshots/popover.png" width="200" alt="Popover"/>
+
+<img src="docs/screenshots/dashboard_timeline.png" width="800" alt="Dashboard — Timeline"/>
+
+<img src="docs/screenshots/dashboard_aireport.png" width="800" alt="Dashboard — AI Report"/>
+
+### Privacy
+
+> **TL;DR — your data never leaves your machine. Only screenshots are sent to Anthropic for activity recognition.**
+
+- Screenshots are processed in RAM and **immediately discarded** — they are never written to disk or a database
+- The local SQLite DB stores: timestamp + perceptual hash (for dedup) + one-line text description + category
+- Screenshots are sent to **Anthropic** (Claude Haiku) over HTTPS. They are **not** sent to the project author
+- All activity data lives under `~/.day-monitor/`. `rm -rf ~/.day-monitor` wipes everything
+- No telemetry — the project author receives zero data from your usage
+
+See [PRIVACY.md](PRIVACY.md) for full details.
 
 ### Requirements
 
