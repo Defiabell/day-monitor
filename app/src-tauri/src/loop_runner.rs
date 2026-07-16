@@ -2,7 +2,10 @@
 //! permission to Day Monitor.app — no external python3 process in the chain.
 
 use crate::analyze::{analyze_screenshot, estimate_cost_usd};
-use crate::capture::{compute_hash, hash_distance, is_screen_active, take_screenshot};
+use crate::capture::{
+    compute_hash, get_focused_display_num, get_frontmost_app, hash_distance, is_screen_active,
+    take_screenshot,
+};
 use crate::db::Db;
 use crate::power;
 use crate::settings;
@@ -79,9 +82,14 @@ async fn tick(api_key: &str, s: &settings::Settings) -> Result<Option<String>, S
     }
 
     let max_w = s.max_image_width;
-    let raw = tauri::async_runtime::spawn_blocking(take_screenshot)
-        .await
-        .map_err(|e| format!("join: {e}"))??;
+    let (raw, detected_app) = tauri::async_runtime::spawn_blocking(|| {
+        let display = get_focused_display_num();
+        let app = get_frontmost_app();
+        let bytes = take_screenshot(display)?;
+        Ok::<_, String>((bytes, app))
+    })
+    .await
+    .map_err(|e| format!("join: {e}"))??;
     let resized = tauri::async_runtime::spawn_blocking(move || {
         crate::capture::resize_to_width(&raw, max_w)
     })
@@ -137,11 +145,12 @@ async fn tick(api_key: &str, s: &settings::Settings) -> Result<Option<String>, S
     }
 
     // Resize for API if not already done. resize_to_width with max_w handles this.
-    let result = analyze_screenshot(&resized, api_key).await?;
+    let result = analyze_screenshot(&resized, api_key, detected_app.as_deref()).await?;
     let app_name = result
         .app
         .as_deref()
         .filter(|s| !s.is_empty())
+        .or(detected_app.as_deref())
         .map(|s| s.to_string());
     let ts = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string();
     let summary = result.summary;

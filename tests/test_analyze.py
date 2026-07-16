@@ -2,7 +2,7 @@ import io
 import pytest
 from unittest.mock import MagicMock
 from PIL import Image
-from analyze import analyze_screenshot
+from analyze import VALID_CATEGORIES, _normalize_category, analyze_screenshot
 
 
 def make_png() -> bytes:
@@ -62,3 +62,32 @@ def test_analyze_screenshot_handles_missing_app():
     client = make_mock_client('{"summary": "黑屏", "category": "other"}')
     result = analyze_screenshot(make_png(), client)
     assert result.get('app') is None
+
+
+class TestNormalizeCategory:
+    def test_valid_category_passes_through(self):
+        for cat in VALID_CATEGORIES:
+            assert _normalize_category(cat, None) == cat
+
+    def test_invented_category_falls_back_to_other(self):
+        assert _normalize_category('system', None) == 'other'
+        assert _normalize_category('media', None) == 'other'
+
+    def test_invented_category_rescued_by_app_name(self):
+        assert _normalize_category('system', 'Meshy') == '3d'
+        assert _normalize_category('system', 'Finder') == 'app'
+        assert _normalize_category('system', 'Slack') == 'slack'
+
+    def test_case_insensitive(self):
+        assert _normalize_category('Coding', None) == 'coding'
+        assert _normalize_category(' BROWSER ', None) == 'browser'
+
+    def test_app_map_is_case_insensitive(self):
+        assert _normalize_category('unknown', 'CURSOR') == 'coding'
+        assert _normalize_category('unknown', 'DBeaver') == 'data'
+
+
+def test_analyze_coerces_invalid_category():
+    client = make_mock_client('{"summary": "系统桌面", "category": "system", "app": "Finder"}')
+    result = analyze_screenshot(make_png(), client)
+    assert result['category'] in VALID_CATEGORIES

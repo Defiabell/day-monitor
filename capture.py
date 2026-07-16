@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import io
 import os
 import subprocess
@@ -53,3 +55,24 @@ def compute_hash(image_bytes: bytes) -> str:
 
 def hash_distance(h1: str, h2: str) -> int:
     return imagehash.hex_to_hash(h1) - imagehash.hex_to_hash(h2)
+
+
+def get_active_app() -> str | None:
+    try:
+        result = subprocess.run(
+            ['osascript', '-e',
+             'tell application "System Events" to get name of first process whose frontmost is true'],
+            capture_output=True, text=True, timeout=2,
+        )
+        return result.stdout.strip() or None
+    except Exception:
+        return None
+
+
+def is_black_screen(image_bytes: bytes, max_bright: int = 25, mean_threshold: int = 10) -> bool:
+    import numpy as np
+    img = Image.open(io.BytesIO(image_bytes)).convert('L')
+    if img.getextrema()[1] < max_bright:
+        return True
+    arr = np.array(img)
+    return float(arr.mean()) < mean_threshold

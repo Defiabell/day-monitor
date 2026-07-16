@@ -8,9 +8,9 @@ use std::process::Command;
 
 const MAX_WIDTH: u32 = 640;
 
-/// Take a screenshot of the primary display via the system `screencapture`
-/// command. Returns the PNG bytes.
-pub fn take_screenshot() -> Result<Vec<u8>, String> {
+/// Take a screenshot of a specific display via `screencapture -D <n>`.
+/// `display_num` is 1-based (1 = main display). Returns the PNG bytes.
+pub fn take_screenshot(display_num: u32) -> Result<Vec<u8>, String> {
     let path: PathBuf = std::env::temp_dir().join(format!(
         "daymonitor-{}-{}.png",
         std::process::id(),
@@ -18,7 +18,8 @@ pub fn take_screenshot() -> Result<Vec<u8>, String> {
     ));
 
     let status = Command::new("/usr/sbin/screencapture")
-        .args(["-x", "-t", "png"])
+        .args(["-x", "-t", "png", "-D"])
+        .arg(display_num.to_string())
         .arg(&path)
         .status()
         .map_err(|e| format!("failed to launch screencapture: {e}"))?;
@@ -31,6 +32,50 @@ pub fn take_screenshot() -> Result<Vec<u8>, String> {
     let bytes = std::fs::read(&path).map_err(|e| format!("failed to read screenshot: {e}"))?;
     let _ = std::fs::remove_file(&path);
     Ok(bytes)
+}
+
+/// Get the name of the frontmost application via System Events.
+pub fn get_frontmost_app() -> Option<String> {
+    let out = Command::new("/usr/bin/osascript")
+        .args([
+            "-e",
+            r#"tell application "System Events" to get name of first process whose frontmost is true"#,
+        ])
+        .output()
+        .ok()?;
+    let name = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if name.is_empty() { None } else { Some(name) }
+}
+
+/// Detect which display (1-based) contains the mouse cursor.
+/// Falls back to 1 (main display) on any error.
+pub fn get_focused_display_num() -> u32 {
+    let script = r#"
+ObjC.import('AppKit');
+var mouse = $.NSEvent.mouseLocation;
+var screens = $.NSScreen.screens;
+var num = 1;
+for (var i = 0; i < screens.count; i++) {
+    var f = screens.objectAtIndex(i).frame;
+    if (mouse.x >= f.origin.x && mouse.x < f.origin.x + f.size.width &&
+        mouse.y >= f.origin.y && mouse.y < f.origin.y + f.size.height) {
+        num = i + 1;
+        break;
+    }
+}
+num;
+"#;
+    let out = Command::new("/usr/bin/osascript")
+        .args(["-l", "JavaScript", "-e", script])
+        .output();
+    match out {
+        Ok(o) => String::from_utf8_lossy(&o.stdout)
+            .trim()
+            .parse::<u32>()
+            .unwrap_or(1)
+            .max(1),
+        Err(_) => 1,
+    }
 }
 
 /// Resize a PNG so its width is at most max_width (preserving aspect ratio).

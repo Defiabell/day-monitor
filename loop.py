@@ -5,7 +5,7 @@ import time
 from datetime import datetime
 
 from analyze import analyze_screenshot
-from capture import compute_hash, hash_distance, is_screen_active, resize_for_api, take_screenshot
+from capture import compute_hash, get_active_app, hash_distance, is_black_screen, is_screen_active, resize_for_api, take_screenshot
 from storage import get_last_event, increment_last_duration, insert_event
 
 DEDUP_THRESHOLD = 12
@@ -33,6 +33,10 @@ class MonitorLoop:
 
         raw = take_screenshot()
         resized = resize_for_api(raw)
+
+        if is_black_screen(resized):
+            return
+
         new_hash = compute_hash(resized)
 
         last = get_last_event(self.conn)
@@ -40,12 +44,13 @@ class MonitorLoop:
             increment_last_duration(self.conn, self.interval)
             return
 
-        result = analyze_screenshot(resized, self.client)
+        active_app = get_active_app()
+        result = analyze_screenshot(resized, self.client, active_app)
         ts = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
-        # `or None` coerces "" / null to NULL so app_name stays clean
         insert_event(
             self.conn, ts, new_hash,
-            result['summary'], result['category'], result.get('app') or None,
+            result['summary'], result['category'],
+            result.get('app') or active_app or None,
         )
 
     def run(self) -> None:
