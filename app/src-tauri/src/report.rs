@@ -74,12 +74,50 @@ pub async fn generate_report(
 ## 今日小结\n（2-3句总结，中文）"
     );
 
+    // CLI first, API fallback
+    let markdown = match cli_generate(&prompt).await {
+        Ok(text) => text,
+        Err(cli_err) => {
+            eprintln!("[day-monitor] CLI report failed ({cli_err}), falling back to API");
+            api_generate(&prompt, api_key).await?
+        }
+    };
+
+    if let Some(parent) = cache.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(&cache, &markdown);
+    Ok(markdown)
+}
+
+async fn cli_generate(prompt: &str) -> Result<String, String> {
+    let output = tokio::process::Command::new("claude")
+        .arg("-p")
+        .arg(prompt)
+        .arg("--model")
+        .arg(MODEL)
+        .arg("--output-format")
+        .arg("text")
+        .env_remove("ANTHROPIC_API_KEY")
+        .output()
+        .await
+        .map_err(|e| format!("spawn: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("exit {}: {stderr}", output.status));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+async fn api_generate(prompt: &str, api_key: &str) -> Result<String, String> {
     let req = AnthropicRequest {
         model: MODEL,
         max_tokens: 2000,
         messages: vec![Msg {
             role: "user",
-            content: prompt,
+            content: prompt.to_string(),
         }],
     };
 
@@ -101,16 +139,10 @@ pub async fn generate_report(
     }
 
     let parsed: AnthropicResponse = resp.json().await.map_err(|e| e.to_string())?;
-    let markdown = parsed
+    Ok(parsed
         .content
         .into_iter()
         .map(|c| c.text)
         .collect::<Vec<_>>()
-        .join("");
-
-    if let Some(parent) = cache.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let _ = std::fs::write(&cache, &markdown);
-    Ok(markdown)
+        .join(""))
 }

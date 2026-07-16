@@ -8,9 +8,9 @@ use std::process::Command;
 
 const MAX_WIDTH: u32 = 640;
 
-/// Take a screenshot of the primary display via the system `screencapture`
-/// command. Returns the PNG bytes.
-pub fn take_screenshot() -> Result<Vec<u8>, String> {
+/// Take a screenshot of a specific display via `screencapture -D <n>`.
+/// `display_num` is 1-based (1 = main display). Returns the PNG bytes.
+pub fn take_screenshot(display_num: u32) -> Result<Vec<u8>, String> {
     let path: PathBuf = std::env::temp_dir().join(format!(
         "daymonitor-{}-{}.png",
         std::process::id(),
@@ -18,7 +18,8 @@ pub fn take_screenshot() -> Result<Vec<u8>, String> {
     ));
 
     let status = Command::new("/usr/sbin/screencapture")
-        .args(["-x", "-t", "png"])
+        .args(["-x", "-t", "png", "-D"])
+        .arg(display_num.to_string())
         .arg(&path)
         .status()
         .map_err(|e| format!("failed to launch screencapture: {e}"))?;
@@ -31,6 +32,50 @@ pub fn take_screenshot() -> Result<Vec<u8>, String> {
     let bytes = std::fs::read(&path).map_err(|e| format!("failed to read screenshot: {e}"))?;
     let _ = std::fs::remove_file(&path);
     Ok(bytes)
+}
+
+/// Get the name of the frontmost application via System Events.
+pub fn get_frontmost_app() -> Option<String> {
+    let out = Command::new("/usr/bin/osascript")
+        .args([
+            "-e",
+            r#"tell application "System Events" to get name of first process whose frontmost is true"#,
+        ])
+        .output()
+        .ok()?;
+    let name = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if name.is_empty() { None } else { Some(name) }
+}
+
+/// Detect which display (1-based) contains the mouse cursor.
+/// Falls back to 1 (main display) on any error.
+pub fn get_focused_display_num() -> u32 {
+    let script = r#"
+ObjC.import('AppKit');
+var mouse = $.NSEvent.mouseLocation;
+var screens = $.NSScreen.screens;
+var num = 1;
+for (var i = 0; i < screens.count; i++) {
+    var f = screens.objectAtIndex(i).frame;
+    if (mouse.x >= f.origin.x && mouse.x < f.origin.x + f.size.width &&
+        mouse.y >= f.origin.y && mouse.y < f.origin.y + f.size.height) {
+        num = i + 1;
+        break;
+    }
+}
+num;
+"#;
+    let out = Command::new("/usr/bin/osascript")
+        .args(["-l", "JavaScript", "-e", script])
+        .output();
+    match out {
+        Ok(o) => String::from_utf8_lossy(&o.stdout)
+            .trim()
+            .parse::<u32>()
+            .unwrap_or(1)
+            .max(1),
+        Err(_) => 1,
+    }
 }
 
 /// Resize a PNG so its width is at most max_width (preserving aspect ratio).
@@ -80,25 +125,64 @@ pub fn hash_distance(h1: &str, h2: &str) -> u32 {
     }
 }
 
-/// Best-effort screen-active check via osascript. Returns true if screen is
-/// awake & unlocked. Falls back to true on any error so we don't silently stop
-/// capturing.
+/// No keyboard/mouse input for this long means nobody is working — skip
+/// capture. The display can stay "active" overnight, which used to record
+/// hours of black screens.
+pub const IDLE_THRESHOLD_S: f64 = 600.0;
+
+/// Parse the HIDIdleTime value (nanoseconds) out of `ioreg -c IOHIDSystem`
+/// output and convert to seconds.
+fn parse_hid_idle_seconds(ioreg_output: &str) -> Option<f64> {
+    let line = ioreg_output
+        .lines()
+        .find(|l| l.contains("HIDIdleTime"))?;
+    let ns: f64 = line.rsplit('=').next()?.trim().parse().ok()?;
+    Some(ns / 1_000_000_000.0)
+}
+
+/// Seconds since the last keyboard/mouse input, via IOKit's HIDIdleTime.
+/// None if it can't be determined.
+pub fn seconds_since_last_input() -> Option<f64> {
+    let out = Command::new("/usr/sbin/ioreg")
+        .args(["-c", "IOHIDSystem", "-d", "4"])
+        .output()
+        .ok()?;
+    parse_hid_idle_seconds(&String::from_utf8_lossy(&out.stdout))
+}
+
+/// Best-effort screen-active check. Returns false when the user has been idle
+/// past IDLE_THRESHOLD_S; falls back to true on any error so we don't silently
+/// stop capturing. (Lock/display-sleep detection is still a follow-up.)
 pub fn is_screen_active() -> bool {
-    let out = Command::new("/usr/bin/osascript")
-        .args([
-            "-e",
-            r#"tell application "System Events" to get name of every process whose name is "loginwindow""#,
-        ])
-        .output();
-    if let Ok(o) = out {
-        let stdout = String::from_utf8_lossy(&o.stdout);
-        if stdout.contains("loginwindow") {
-            // loginwindow only "exists as a foreground process" in our query when locked.
-            // Inverted heuristic; if uncertain, assume active.
-        }
+    match seconds_since_last_input() {
+        Some(idle) if idle > IDLE_THRESHOLD_S => false,
+        _ => true,
     }
-    // For now: always return true. Lock detection refinement is a follow-up.
-    true
+}
+
+/// True when the frame is (nearly) black — a sleeping display or an idle
+/// dark terminal. Rules, in order: everything darker than 25; mean below 10;
+/// mean below 20 with under 2% of pixels brighter than 60. A dark-theme
+/// editor full of text has a much higher bright fraction and is not flagged.
+pub fn is_black_screen(image_bytes: &[u8]) -> Result<bool, String> {
+    let img = image::load_from_memory(image_bytes)
+        .map_err(|e| format!("decode failed: {e}"))?
+        .to_luma8();
+    let pixels = img.as_raw();
+    if pixels.is_empty() {
+        return Ok(true);
+    }
+    let max = *pixels.iter().max().unwrap();
+    if max < 25 {
+        return Ok(true);
+    }
+    let mean = pixels.iter().map(|&p| p as u64).sum::<u64>() as f64 / pixels.len() as f64;
+    if mean < 10.0 {
+        return Ok(true);
+    }
+    let bright_frac =
+        pixels.iter().filter(|&&p| p > 60).count() as f64 / pixels.len() as f64;
+    Ok(mean < 20.0 && bright_frac < 0.02)
 }
 
 #[cfg(test)]
@@ -136,5 +220,54 @@ mod tests {
         let h1 = compute_hash(&png).unwrap();
         let h2 = compute_hash(&png).unwrap();
         assert_eq!(hash_distance(&h1, &h2), 0);
+    }
+
+    /// Uniform dark background with `spot_count` pixels of `spot_value` gray.
+    fn make_dark_png(bg: u8, spot_value: u8, spot_count: usize) -> Vec<u8> {
+        let mut img = image::GrayImage::from_pixel(100, 100, image::Luma([bg]));
+        for (i, p) in img.pixels_mut().enumerate() {
+            if i >= spot_count {
+                break;
+            }
+            *p = image::Luma([spot_value]);
+        }
+        let mut bytes = Vec::new();
+        image::DynamicImage::ImageLuma8(img)
+            .write_to(&mut std::io::Cursor::new(&mut bytes), image::ImageFormat::Png)
+            .unwrap();
+        bytes
+    }
+
+    #[test]
+    fn black_screen_pure_black() {
+        assert!(is_black_screen(&make_dark_png(0, 0, 0)).unwrap());
+    }
+
+    #[test]
+    fn black_screen_normal_bright_image_is_not_black() {
+        assert!(!is_black_screen(&make_png(100, 100, [128, 128, 128])).unwrap());
+    }
+
+    #[test]
+    fn black_screen_dark_with_sparse_bright_content() {
+        // bg=15 with 1% bright pixels: mean ~16.9 — the frames that used to slip through
+        assert!(is_black_screen(&make_dark_png(15, 200, 100)).unwrap());
+    }
+
+    #[test]
+    fn black_screen_dark_theme_editor_is_not_black() {
+        // bg=15 with 8% bright text pixels: mean ~29.8 — real work
+        assert!(!is_black_screen(&make_dark_png(15, 200, 800)).unwrap());
+    }
+
+    #[test]
+    fn parse_hid_idle_from_ioreg_output() {
+        let out = r#"  |   "HIDIdleTime" = 245000000000"#;
+        assert_eq!(parse_hid_idle_seconds(out), Some(245.0));
+    }
+
+    #[test]
+    fn parse_hid_idle_missing_returns_none() {
+        assert_eq!(parse_hid_idle_seconds("no idle info here"), None);
     }
 }

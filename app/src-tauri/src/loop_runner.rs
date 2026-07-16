@@ -1,8 +1,11 @@
 //! Pure-Rust monitoring loop. macOS TCC only needs to grant screen-recording
 //! permission to Day Monitor.app — no external python3 process in the chain.
 
-use crate::analyze::{analyze_screenshot, estimate_cost_usd};
-use crate::capture::{compute_hash, hash_distance, is_screen_active, take_screenshot};
+use crate::analyze::{analyze_screenshot, estimate_cost_usd, is_unidentifiable};
+use crate::capture::{
+    compute_hash, get_focused_display_num, get_frontmost_app, hash_distance, is_black_screen,
+    is_screen_active, take_screenshot,
+};
 use crate::db::Db;
 use crate::power;
 use crate::settings;
@@ -19,6 +22,11 @@ pub fn spawn(state: Arc<AppState>, api_key: String) {
         if let Ok(db) = Db::open(Db::default_path()) {
             let _ = db.cleanup_older_than(s.retention_days);
         }
+
+        // Hash of the last frame the model could not identify (black screen
+        // etc.). Kept in memory only, so similar frames skip the API call
+        // without ever being stored.
+        let mut last_skipped_hash: Option<String> = None;
 
         loop {
             if !state.running.load(Ordering::Relaxed) {
@@ -51,7 +59,7 @@ pub fn spawn(state: Arc<AppState>, api_key: String) {
                 continue;
             }
 
-            match tick(&api_key, &s).await {
+            match tick(&api_key, &s, &mut last_skipped_hash).await {
                 Ok(skipped) => {
                     set_skip(&state, skipped);
                     *state.last_error.write().unwrap() = None;
@@ -73,25 +81,48 @@ fn set_skip(state: &Arc<AppState>, reason: Option<String>) {
 /// Returns Ok(None) if a normal capture happened, Ok(Some(reason)) if skipped
 /// for a non-error reason (screen off, dedup hit, budget exhausted), Err on
 /// real failure.
-async fn tick(api_key: &str, s: &settings::Settings) -> Result<Option<String>, String> {
+async fn tick(
+    api_key: &str,
+    s: &settings::Settings,
+    last_skipped_hash: &mut Option<String>,
+) -> Result<Option<String>, String> {
     if !is_screen_active() {
-        return Ok(Some("screen off / locked".into()));
+        return Ok(Some("screen off / locked / user idle".into()));
     }
 
     let max_w = s.max_image_width;
-    let raw = tauri::async_runtime::spawn_blocking(take_screenshot)
-        .await
-        .map_err(|e| format!("join: {e}"))??;
+    let (raw, detected_app) = tauri::async_runtime::spawn_blocking(|| {
+        let display = get_focused_display_num();
+        let app = get_frontmost_app();
+        let bytes = take_screenshot(display)?;
+        Ok::<_, String>((bytes, app))
+    })
+    .await
+    .map_err(|e| format!("join: {e}"))??;
     let resized = tauri::async_runtime::spawn_blocking(move || {
         crate::capture::resize_to_width(&raw, max_w)
     })
     .await
     .map_err(|e| format!("join: {e}"))??;
 
+    let black_bytes = resized.clone();
+    let black = tauri::async_runtime::spawn_blocking(move || is_black_screen(&black_bytes))
+        .await
+        .map_err(|e| format!("join: {e}"))??;
+    if black {
+        return Ok(Some("black screen".into()));
+    }
+
     let hash_bytes = resized.clone();
     let new_hash = tauri::async_runtime::spawn_blocking(move || compute_hash(&hash_bytes))
         .await
         .map_err(|e| format!("join: {e}"))??;
+
+    if let Some(skipped) = last_skipped_hash.as_deref() {
+        if hash_distance(&new_hash, skipped) < s.dedup_threshold {
+            return Ok(Some("unidentifiable frame (deduped, not stored)".into()));
+        }
+    }
 
     let last = tauri::async_runtime::spawn_blocking(|| {
         Db::open(Db::default_path())
@@ -137,11 +168,17 @@ async fn tick(api_key: &str, s: &settings::Settings) -> Result<Option<String>, S
     }
 
     // Resize for API if not already done. resize_to_width with max_w handles this.
-    let result = analyze_screenshot(&resized, api_key).await?;
+    let result = analyze_screenshot(&resized, api_key, detected_app.as_deref()).await?;
+    if result.category == "other" && is_unidentifiable(&result.summary) {
+        *last_skipped_hash = Some(new_hash);
+        return Ok(Some("unidentifiable frame (not stored)".into()));
+    }
+    *last_skipped_hash = None;
     let app_name = result
         .app
         .as_deref()
         .filter(|s| !s.is_empty())
+        .or(detected_app.as_deref())
         .map(|s| s.to_string());
     let ts = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string();
     let summary = result.summary;

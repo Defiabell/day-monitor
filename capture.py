@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import io
 import os
 import subprocess
@@ -8,8 +10,11 @@ import imagehash
 from PIL import Image
 
 
-def is_screen_active() -> bool:
-    """Return False if display is off or screen is locked."""
+IDLE_THRESHOLD_S = 600
+
+
+def is_screen_active(max_idle_s: int = IDLE_THRESHOLD_S) -> bool:
+    """Return False if display is off, screen is locked, or user has been idle."""
     try:
         import Quartz
         # Screen locked check
@@ -18,6 +23,19 @@ def is_screen_active() -> bool:
             return False
         # Display active check
         if not Quartz.CGDisplayIsActive(Quartz.CGMainDisplayID()):
+            return False
+        # User input idle check: CGDisplayIsActive stays true while the
+        # display sleeps overnight, which used to record hours of black
+        # screens. No keyboard/mouse input for max_idle_s means nobody is
+        # working; skip capture.
+        try:
+            idle = float(Quartz.CGEventSourceSecondsSinceLastEventType(
+                Quartz.kCGEventSourceStateHIDSystemState,
+                int(Quartz.kCGAnyInputEventType),
+            ))
+        except Exception:
+            idle = 0.0
+        if idle > max_idle_s:
             return False
     except Exception:
         pass
@@ -53,3 +71,31 @@ def compute_hash(image_bytes: bytes) -> str:
 
 def hash_distance(h1: str, h2: str) -> int:
     return imagehash.hex_to_hash(h1) - imagehash.hex_to_hash(h2)
+
+
+def get_active_app() -> str | None:
+    try:
+        result = subprocess.run(
+            ['osascript', '-e',
+             'tell application "System Events" to get name of first process whose frontmost is true'],
+            capture_output=True, text=True, timeout=2,
+        )
+        return result.stdout.strip() or None
+    except Exception:
+        return None
+
+
+def is_black_screen(image_bytes: bytes, max_bright: int = 25, mean_threshold: int = 10,
+                    dark_mean: int = 20, bright_frac: float = 0.02) -> bool:
+    import numpy as np
+    img = Image.open(io.BytesIO(image_bytes)).convert('L')
+    if img.getextrema()[1] < max_bright:
+        return True
+    arr = np.array(img)
+    mean = float(arr.mean())
+    if mean < mean_threshold:
+        return True
+    # Dark screen with almost no bright content (e.g. an idle terminal with a
+    # stray line of text). A dark-theme editor full of text has a much higher
+    # bright-pixel fraction and is not flagged.
+    return mean < dark_mean and float((arr > 60).mean()) < bright_frac

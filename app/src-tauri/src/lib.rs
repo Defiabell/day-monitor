@@ -107,13 +107,15 @@ pub fn run() {
             )?;
 
             // Tray icon — reuse the app's default window icon
-            let icon = app
-                .default_window_icon()
-                .ok_or("no default window icon")?
-                .clone();
-            let _tray = TrayIconBuilder::with_id("main")
+            let tray_png = include_bytes!("../icons/tray-icon.png");
+            let tray_img = image::load_from_memory(tray_png)
+                .map_err(|e| format!("decode tray icon: {e}"))?
+                .to_rgba8();
+            let (w, h) = tray_img.dimensions();
+            let icon = tauri::image::Image::new_owned(tray_img.into_raw(), w, h);
+            let tray = TrayIconBuilder::with_id("main")
                 .icon(icon)
-                .icon_as_template(true)
+                .icon_as_template(false)
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id().as_ref() {
@@ -147,6 +149,7 @@ pub fn run() {
                     }
                 })
                 .build(app)?;
+            std::mem::forget(tray);
 
             // Start the in-process monitoring loop (pure Rust — no sidecar)
             let state: tauri::State<Arc<AppState>> = app.state();
