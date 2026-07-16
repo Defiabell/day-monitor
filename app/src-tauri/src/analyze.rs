@@ -249,6 +249,42 @@ fn parse_response(
     })
 }
 
+/// Summaries the model produces when the screen content is not recognizable
+/// (black screen, blank screen). These events are noise — mostly idle/asleep
+/// displays — and should not be stored.
+const UNIDENTIFIABLE_MARKERS: &[&str] =
+    &["黑屏", "黑暗", "全黑", "黑色", "空白", "未响应", "无法识别"];
+
+pub fn is_unidentifiable(summary: &str) -> bool {
+    !summary.is_empty() && UNIDENTIFIABLE_MARKERS.iter().any(|m| summary.contains(m))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn black_screen_summaries_are_unidentifiable() {
+        for s in [
+            "屏幕黑屏，无法识别具体活动",
+            "屏幕黑暗，无法识别具体活动",
+            "屏幕为黑色，无法识别具体操作",
+            "屏幕全黑，无法识别具体活动",
+            "屏幕空白，无明显工作内容",
+            "屏幕黑屏或应用未响应",
+        ] {
+            assert!(is_unidentifiable(s), "{s}");
+        }
+    }
+
+    #[test]
+    fn normal_summaries_are_identifiable() {
+        for s in ["在 VS Code 写代码", "开 Zoom 会议", "浏览技术文档", "回复 Slack 消息", ""] {
+            assert!(!is_unidentifiable(s), "{s}");
+        }
+    }
+}
+
 const VALID_CATEGORIES: &[&str] = &[
     "coding", "meeting", "slack", "wechat", "feishu", "email",
     "browser", "reading", "writing", "design", "data", "3d", "app", "other",

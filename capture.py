@@ -10,8 +10,11 @@ import imagehash
 from PIL import Image
 
 
-def is_screen_active() -> bool:
-    """Return False if display is off or screen is locked."""
+IDLE_THRESHOLD_S = 600
+
+
+def is_screen_active(max_idle_s: int = IDLE_THRESHOLD_S) -> bool:
+    """Return False if display is off, screen is locked, or user has been idle."""
     try:
         import Quartz
         # Screen locked check
@@ -20,6 +23,19 @@ def is_screen_active() -> bool:
             return False
         # Display active check
         if not Quartz.CGDisplayIsActive(Quartz.CGMainDisplayID()):
+            return False
+        # User input idle check: CGDisplayIsActive stays true while the
+        # display sleeps overnight, which used to record hours of black
+        # screens. No keyboard/mouse input for max_idle_s means nobody is
+        # working; skip capture.
+        try:
+            idle = float(Quartz.CGEventSourceSecondsSinceLastEventType(
+                Quartz.kCGEventSourceStateHIDSystemState,
+                int(Quartz.kCGAnyInputEventType),
+            ))
+        except Exception:
+            idle = 0.0
+        if idle > max_idle_s:
             return False
     except Exception:
         pass
@@ -69,10 +85,17 @@ def get_active_app() -> str | None:
         return None
 
 
-def is_black_screen(image_bytes: bytes, max_bright: int = 25, mean_threshold: int = 10) -> bool:
+def is_black_screen(image_bytes: bytes, max_bright: int = 25, mean_threshold: int = 10,
+                    dark_mean: int = 20, bright_frac: float = 0.02) -> bool:
     import numpy as np
     img = Image.open(io.BytesIO(image_bytes)).convert('L')
     if img.getextrema()[1] < max_bright:
         return True
     arr = np.array(img)
-    return float(arr.mean()) < mean_threshold
+    mean = float(arr.mean())
+    if mean < mean_threshold:
+        return True
+    # Dark screen with almost no bright content (e.g. an idle terminal with a
+    # stray line of text). A dark-theme editor full of text has a much higher
+    # bright-pixel fraction and is not flagged.
+    return mean < dark_mean and float((arr > 60).mean()) < bright_frac

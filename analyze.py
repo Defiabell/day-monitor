@@ -54,6 +54,15 @@ _APP_CATEGORY_MAP = {
 
 MODEL = 'claude-haiku-4-5-20251001'
 
+# Summaries the model produces when the screen content is not recognizable
+# (black screen, blank screen). These events are noise: they mostly come from
+# idle/asleep displays and should not be stored.
+_UNIDENTIFIABLE_RE = re.compile(r'黑屏|黑暗|全黑|黑色|空白|未响应|无法识别')
+
+
+def is_unidentifiable(summary: str | None) -> bool:
+    return bool(summary) and bool(_UNIDENTIFIABLE_RE.search(summary))
+
 
 def _normalize_category(category: str, app_name: str | None) -> str:
     cat = category.strip().lower()

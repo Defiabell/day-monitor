@@ -2,7 +2,7 @@ import io
 import pytest
 from unittest.mock import MagicMock
 from PIL import Image
-from analyze import VALID_CATEGORIES, _normalize_category, analyze_screenshot
+from analyze import VALID_CATEGORIES, _normalize_category, analyze_screenshot, is_unidentifiable
 
 
 def make_png() -> bytes:
@@ -85,6 +85,27 @@ class TestNormalizeCategory:
     def test_app_map_is_case_insensitive(self):
         assert _normalize_category('unknown', 'CURSOR') == 'coding'
         assert _normalize_category('unknown', 'DBeaver') == 'data'
+
+
+class TestIsUnidentifiable:
+    def test_black_screen_summaries_are_unidentifiable(self):
+        for s in [
+            '屏幕黑屏，无法识别具体活动',
+            '屏幕黑暗，无法识别具体活动',
+            '屏幕为黑色，无法识别具体操作',
+            '屏幕全黑，无法识别具体活动',
+            '屏幕空白，无明显工作内容',
+            '屏幕黑屏或应用未响应',
+        ]:
+            assert is_unidentifiable(s) is True
+
+    def test_normal_summaries_are_identifiable(self):
+        for s in ['在 VS Code 写代码', '开 Zoom 会议', '浏览技术文档', '回复 Slack 消息']:
+            assert is_unidentifiable(s) is False
+
+    def test_empty_or_none_summary(self):
+        assert is_unidentifiable('') is False
+        assert is_unidentifiable(None) is False
 
 
 def test_analyze_coerces_invalid_category():

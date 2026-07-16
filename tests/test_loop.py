@@ -184,6 +184,55 @@ def test_loop_passes_app_name_to_insert_event():
     assert rows[0][0] == 'VS Code'
 
 
+def test_loop_skips_insert_on_unidentifiable_result():
+    """Black-screen frames classified by the model should not be stored."""
+    conn = init_db(':memory:')
+    client = make_mock_client(summary='屏幕黑屏，无法识别具体活动', category='other')
+    png = make_png()
+
+    loop = MonitorLoop(conn=conn, client=client, interval=10)
+    with patch('loop.is_screen_active', return_value=True), \
+         patch('loop.take_screenshot', return_value=png), \
+         patch('loop.resize_for_api', return_value=png):
+        loop._tick()
+
+    assert get_last_event(conn) is None
+
+
+def test_loop_no_repeat_api_call_for_similar_unidentifiable_frames():
+    """After skipping a black frame, similar frames should not re-hit the API."""
+    conn = init_db(':memory:')
+    client = make_mock_client(summary='屏幕黑屏，无法识别具体活动', category='other')
+    png = make_png()
+
+    loop = MonitorLoop(conn=conn, client=client, interval=10)
+    with patch('loop.is_screen_active', return_value=True), \
+         patch('loop.take_screenshot', return_value=png), \
+         patch('loop.resize_for_api', return_value=png):
+        loop._tick()
+        loop._tick()
+        loop._tick()
+
+    assert client.messages.create.call_count == 1
+    assert get_last_event(conn) is None
+
+
+def test_loop_still_inserts_normal_other_category():
+    """A genuinely uncategorizable but identifiable activity is still stored."""
+    conn = init_db(':memory:')
+    client = make_mock_client(summary='使用小众桌面工具', category='other')
+    png = make_png()
+
+    loop = MonitorLoop(conn=conn, client=client, interval=10)
+    with patch('loop.is_screen_active', return_value=True), \
+         patch('loop.take_screenshot', return_value=png), \
+         patch('loop.resize_for_api', return_value=png):
+        loop._tick()
+
+    last = get_last_event(conn)
+    assert last is not None
+
+
 def test_loop_coerces_empty_app_to_null():
     """Model returning app: '' should be stored as NULL, not empty string."""
     conn = init_db(':memory:')
@@ -197,7 +246,8 @@ def test_loop_coerces_empty_app_to_null():
     loop = MonitorLoop(conn=conn, client=client, interval=10)
     with patch('loop.is_screen_active', return_value=True), \
          patch('loop.take_screenshot', return_value=make_png()), \
-         patch('loop.resize_for_api', return_value=make_png()):
+         patch('loop.resize_for_api', return_value=make_png()), \
+         patch('loop.get_active_app', return_value=None):
         loop._tick()
 
     rows = conn.execute("SELECT app_name FROM events").fetchall()
