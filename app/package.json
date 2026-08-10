@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:pages": "tsc && PAGES_BUILD=1 vite build",
     "build:mac": "tauri build",
     "install:mac": "bash ./scripts/macos-sign-install.sh",
     "dist:mac": "tauri build && bash ./scripts/macos-sign-install.sh",

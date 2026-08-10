@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { isDemo } from '../lib/api';
 import { TimelineView } from './TimelineView';
 import { PieChartView } from './PieChartView';
 import { TrendsView } from './TrendsView';
@@ -28,7 +29,25 @@ export function Dashboard() {
   const [days, setDays] = useState<1 | 7 | 30>(1);
 
   return (
-    <div className="flex h-screen bg-gray-50 text-gray-900 font-sans">
+    <div className="flex flex-col h-screen bg-gray-50 text-gray-900 font-sans">
+      {isDemo && (
+        <div className="flex items-center gap-2 px-6 py-2 bg-amber-50 border-b border-amber-200 text-amber-800 text-xs">
+          <span>🎬</span>
+          <span>
+            Demo mode — sample data generated in your browser. The real app
+            runs 100% locally on your Mac.
+          </span>
+          <a
+            className="ml-auto underline font-medium shrink-0"
+            href="https://github.com/Defiabell/day-monitor"
+            target="_blank"
+            rel="noreferrer"
+          >
+            GitHub ↗
+          </a>
+        </div>
+      )}
+      <div className="flex flex-1 overflow-hidden">
       <aside className="w-44 bg-white border-r border-gray-200 flex flex-col">
         <div className="p-4 text-base font-semibold border-b border-gray-200">
           ☕ Day Monitor
@@ -87,6 +106,7 @@ export function Dashboard() {
           {view === 'events' && <EventsView date={date} />}
           {view === 'report' && <AIReportView date={date} />}
         </main>
+      </div>
       </div>
     </div>
   );

@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { mockApi } from './mockApi';
 import type {
   TodayStats,
   MonitorStatus,
@@ -11,7 +12,12 @@ import type {
   CostStats,
 } from './types';
 
-export const api = {
+// When served as a plain web page (no Tauri runtime), fall back to generated
+// demo data so the dashboard can be hosted as a live demo.
+const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+export const isDemo = !isTauri;
+
+const realApi = {
   todayStats: () => invoke<TodayStats>('get_today_stats'),
   status: () => invoke<MonitorStatus>('get_status'),
   togglePause: () => invoke<MonitorStatus>('toggle_pause'),
@@ -37,3 +43,5 @@ export const api = {
   saveSettings: (settings: Settings) => invoke<void>('save_settings', { settings }),
   costStats: () => invoke<CostStats>('get_cost_stats'),
 };
+
+export const api: typeof realApi = isTauri ? realApi : mockApi;

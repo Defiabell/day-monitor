@@ -4,6 +4,9 @@
 
 每 ~20 秒截一次屏 → Claude Haiku 识别活动类型 → SQLite 记录 → 仪表板展示时间轴/分类/趋势/AI 日报。
 
+**🎬 在线 Demo（浏览器直接打开，示例数据）／Live demo with sample data:**
+**https://defiabell.github.io/day-monitor/**
+
 [简体中文](#简体中文) · [English](#english)
 
 ---

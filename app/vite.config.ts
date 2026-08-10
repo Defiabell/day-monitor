@@ -6,6 +6,9 @@ const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig(async () => ({
   plugins: [react()],
+  // Relative base so the static demo works under a sub-path (GitHub Pages).
+  // Tauri builds keep the default absolute base.
+  base: process.env.PAGES_BUILD ? './' : '/',
   clearScreen: false,
   server: {
     port: 1420,
