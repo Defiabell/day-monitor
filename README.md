@@ -43,12 +43,12 @@
 
 ### 快速开始
 
-**最简单：[下载预编译 .app](dist/Day-Monitor-0.1.0-arm64.zip)**（见 [INSTALL.md](dist/INSTALL.md)）
+**最简单：[到 Releases 下载预编译包](https://github.com/Defiabell/day-monitor/releases/latest)**（`.dmg` 或 `.zip` 均可，universal 二进制）。首次打开会被 Gatekeeper 拦下——右键点图标 → 打开，再点一次「打开」即可；这个包没有做苹果公证。
 
 **自己编译：**
 
 ```bash
-git clone https://github.com/yourname/day-monitor
+git clone https://github.com/Defiabell/day-monitor
 cd day-monitor
 
 # Rust 工具链
@@ -221,7 +221,7 @@ See [PRIVACY.md](PRIVACY.md) for full details.
 ### Build
 
 ```bash
-git clone https://github.com/yourname/day-monitor
+git clone https://github.com/Defiabell/day-monitor
 cd day-monitor/app
 yarn install
 yarn tauri build
