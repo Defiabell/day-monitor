@@ -11,6 +11,8 @@
 
 **🎬 在线 Demo（浏览器直接打开，示例数据）：https://defiabell.github.io/day-monitor/**
 
+![Day Monitor 仪表板演示](docs/demo.gif)
+
 [English](README.md) | 简体中文
 
 ## 截图预览

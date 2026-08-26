@@ -11,6 +11,8 @@ Every ~20 seconds: screenshot → Claude Haiku labels the activity → local SQL
 
 **🎬 Live demo (sample data, right in your browser): https://defiabell.github.io/day-monitor/**
 
+![Day Monitor dashboard demo](docs/demo.gif)
+
 English | [简体中文](README.zh-CN.md)
 
 ## What it does
