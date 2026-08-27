@@ -146,7 +146,15 @@ async fn cli_analyze(image_bytes: &[u8], prompt: &str) -> Result<AnalyzeResult, 
         .arg(MODEL)
         .arg("--output-format")
         .arg("text")
+        // Strip inherited routing/auth overrides (e.g. from a claude-aigw shell):
+        // the CLI must always run on subscription against the official API,
+        // or a gateway without this model turns every call into a 400 + alert.
         .env_remove("ANTHROPIC_API_KEY")
+        .env_remove("ANTHROPIC_BASE_URL")
+        .env_remove("ANTHROPIC_AUTH_TOKEN")
+        .env_remove("ANTHROPIC_MODEL")
+        .env_remove("ANTHROPIC_SMALL_FAST_MODEL")
+        .env_remove("ANTHROPIC_CUSTOM_MODEL_OPTION")
         .output()
         .await
         .map_err(|e| format!("spawn: {e}"))?;

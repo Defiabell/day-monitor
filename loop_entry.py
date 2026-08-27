@@ -36,7 +36,7 @@ def main() -> None:
     try:
         conn = init_db(db_path)
         cleanup_old_events(conn, days=30)
-        client = anthropic.Anthropic(api_key=api_key)
+        client = anthropic.Anthropic(api_key=api_key, base_url='https://api.anthropic.com')
         loop = MonitorLoop(conn=conn, client=client, interval=20)
         loop.run()
     finally:

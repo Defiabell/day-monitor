@@ -98,7 +98,13 @@ async fn cli_generate(prompt: &str) -> Result<String, String> {
         .arg(MODEL)
         .arg("--output-format")
         .arg("text")
+        // Same env scrub as analyze.rs — see cli_analyze for rationale.
         .env_remove("ANTHROPIC_API_KEY")
+        .env_remove("ANTHROPIC_BASE_URL")
+        .env_remove("ANTHROPIC_AUTH_TOKEN")
+        .env_remove("ANTHROPIC_MODEL")
+        .env_remove("ANTHROPIC_SMALL_FAST_MODEL")
+        .env_remove("ANTHROPIC_CUSTOM_MODEL_OPTION")
         .output()
         .await
         .map_err(|e| format!("spawn: {e}"))?;
