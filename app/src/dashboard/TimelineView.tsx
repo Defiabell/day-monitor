@@ -1,25 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import type { TimelineSegment } from '../lib/types';
-
-const CATEGORY_COLORS: Record<string, string> = {
-  coding: '#3b82f6',
-  meeting: '#ef4444',
-  slack: '#a855f7',
-  wechat: '#22c55e',
-  feishu: '#0ea5e9',
-  email: '#f59e0b',
-  browser: '#06b6d4',
-  reading: '#84cc16',
-  writing: '#65a30d',
-  design: '#ec4899',
-  '3d': '#f97316',
-  media: '#d946ef',
-  data: '#0d9488',
-  system: '#94a3b8',
-  app: '#94a3b8',
-  other: '#6b7280',
-};
+import { categoryColor } from '../lib/categories';
 
 function fmtDuration(s: number) {
   const h = Math.floor(s / 3600);
@@ -77,7 +59,7 @@ export function TimelineView({ date }: { date: string }) {
                 style={{
                   left: `${left}%`,
                   width: `${Math.max(width, 0.3)}%`,
-                  background: CATEGORY_COLORS[seg.category] ?? '#6b7280',
+                  background: categoryColor(seg.category),
                 }}
                 title={`${seg.start}–${seg.end} ${seg.category}: ${seg.summary} (${fmtDuration(seg.duration_s)})`}
               />
@@ -116,7 +98,7 @@ export function TimelineView({ date }: { date: string }) {
                 <span
                   className="inline-block px-2 py-0.5 rounded text-xs text-white"
                   style={{
-                    background: CATEGORY_COLORS[s.category] ?? '#6b7280',
+                    background: categoryColor(s.category),
                   }}
                 >
                   {s.category}

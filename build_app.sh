@@ -12,7 +12,15 @@ echo "==> Step 1: Build sidecar"
 ./build_sidecar.sh
 
 echo "==> Step 2: Build Tauri app"
+# A signing identity belongs here, in the environment, NOT in tauri.conf.json.
+# That file is committed, and CI has no such identity in its keychain, so a
+# value there fails every release build with "The specified item could not be
+# found in the keychain". Tauri reads APPLE_SIGNING_IDENTITY on its own; leave
+# it unset and step 3 adhoc-signs, which is enough to run locally.
 cd app
+if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
+  echo "    (signing with identity: $APPLE_SIGNING_IDENTITY)"
+fi
 npm run tauri build
 cd ..
 

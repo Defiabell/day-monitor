@@ -2,7 +2,10 @@ import { useEffect, useState } from 'react';
 import { marked } from 'marked';
 import { api } from '../lib/api';
 
+type Mode = 'daily' | 'weekly';
+
 export function AIReportView({ date }: { date: string }) {
+  const [mode, setMode] = useState<Mode>('daily');
   const [markdown, setMarkdown] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -12,23 +15,29 @@ export function AIReportView({ date }: { date: string }) {
     setMarkdown(null);
     setError(null);
     setExists(false);
-    // Try cached first (force=false)
-    api
-      .generateAIReport(date, false)
+    // Cached report loads instantly; otherwise this generates on first view.
+    const load =
+      mode === 'daily'
+        ? api.generateAIReport(date, false)
+        : api.generateWeeklyReport(date, false);
+    load
       .then((md) => {
         setMarkdown(md);
         setExists(true);
       })
       .catch(() => {
-        // No cache or no events; user must click Generate
+        // No events for this date/week; user can still click Generate
       });
-  }, [date]);
+  }, [date, mode]);
 
   const generate = async (force = false) => {
     setLoading(true);
     setError(null);
     try {
-      const md = await api.generateAIReport(date, force);
+      const md =
+        mode === 'daily'
+          ? await api.generateAIReport(date, force)
+          : await api.generateWeeklyReport(date, force);
       setMarkdown(md);
       setExists(true);
     } catch (e) {
@@ -38,10 +47,32 @@ export function AIReportView({ date }: { date: string }) {
     }
   };
 
+  const modeBtn = (m: Mode, label: string) => (
+    <button
+      onClick={() => setMode(m)}
+      className={
+        'px-3 py-1 text-sm rounded ' +
+        (mode === m
+          ? 'bg-gray-900 text-white'
+          : 'border border-gray-300 hover:bg-gray-100')
+      }
+    >
+      {label}
+    </button>
+  );
+
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold">AI Report · {date}</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-lg font-semibold">
+            {mode === 'daily' ? `AI 日报 · ${date}` : `AI 周报 · 截至 ${date} 的最近 7 天`}
+          </h2>
+          <div className="flex gap-1">
+            {modeBtn('daily', '日报')}
+            {modeBtn('weekly', '周报')}
+          </div>
+        </div>
         <div className="flex gap-2">
           {!exists && (
             <button
@@ -73,8 +104,9 @@ export function AIReportView({ date }: { date: string }) {
         />
       ) : !loading && !error ? (
         <div className="text-gray-500">
-          No report yet for {date}. Click Generate to create one (uses Claude
-          Haiku, ~1¢).
+          {mode === 'daily'
+            ? `No report yet for ${date}. Click Generate to create one (uses Claude Haiku, ~1¢).`
+            : `该周暂无周报。点击 Generate 基于最近 7 天记录生成（按 ISO 周缓存，周中生成的是截至 ${date} 的部分周报）。`}
         </div>
       ) : null}
     </div>

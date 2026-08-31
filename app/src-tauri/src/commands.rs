@@ -142,6 +142,53 @@ pub async fn generate_ai_report(date: String, force: Option<bool>) -> Result<Str
 }
 
 #[tauri::command]
+pub async fn generate_weekly_report(
+    end_date: Option<String>,
+    force: Option<bool>,
+) -> Result<String, String> {
+    let api_key = read_api_key()?;
+    let end = end_date.unwrap_or_else(|| chrono::Local::now().format("%Y-%m-%d").to_string());
+    let end_d =
+        chrono::NaiveDate::parse_from_str(&end, "%Y-%m-%d").map_err(|e| e.to_string())?;
+    let mut days = Vec::with_capacity(7);
+    {
+        let db = Db::open(Db::default_path()).map_err(|e| e.to_string())?;
+        for off in (0..7).rev() {
+            let d = end_d - chrono::Duration::days(off);
+            let ds = d.format("%Y-%m-%d").to_string();
+            let events = db.events_for_date(&ds).map_err(|e| e.to_string())?;
+            days.push((ds, events));
+        }
+    }
+    report::generate_weekly_report(days, &api_key, force.unwrap_or(false)).await
+}
+
+/// Dump all events as pretty JSON into ~/Downloads. Returns the file path.
+#[tauri::command]
+pub async fn export_data() -> Result<String, String> {
+    let db = Db::open(Db::default_path()).map_err(|e| e.to_string())?;
+    let events = db
+        .events_in_range("0000-01-01T00:00:00", "9999-12-31T23:59:59")
+        .map_err(|e| e.to_string())?;
+    let payload = serde_json::json!({
+        "exported_at": chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string(),
+        "event_count": events.len(),
+        "events": events,
+    });
+    let dir = dirs::download_dir().unwrap_or_else(|| dirs::home_dir().unwrap_or_default());
+    let path = dir.join(format!(
+        "day-monitor-export-{}.json",
+        chrono::Local::now().format("%Y-%m-%d-%H%M%S")
+    ));
+    std::fs::write(
+        &path,
+        serde_json::to_string_pretty(&payload).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
 pub async fn open_dashboard(app: tauri::AppHandle) -> Result<(), String> {
     use tauri::{WebviewUrl, WebviewWindowBuilder};
 
@@ -272,8 +319,11 @@ pub async fn get_cost_stats() -> Result<CostStats, String> {
         month_usd: month_cost,
         month_calls,
         projected_month_usd: projected,
-        price_input_per_mtok: crate::analyze::PRICE_INPUT_PER_MTOK,
-        price_output_per_mtok: crate::analyze::PRICE_OUTPUT_PER_MTOK,
+        // Report the prices actually used for accounting, not the built-in
+        // Haiku ones — otherwise the cost panel contradicts the budget gate
+        // as soon as anyone configures their own model.
+        price_input_per_mtok: settings::get().price_input(),
+        price_output_per_mtok: settings::get().price_output(),
     })
 }
 

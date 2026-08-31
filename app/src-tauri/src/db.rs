@@ -176,6 +176,33 @@ impl Db {
         Ok(row)
     }
 
+    /// True once the v2 category migration has run (PRAGMA user_version >= 1),
+    /// so startup doesn't re-scan the events table forever.
+    pub fn category_migration_done(&self) -> Result<bool> {
+        let v: i64 = self
+            .conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        Ok(v >= 1)
+    }
+
+    pub fn mark_category_migration_done(&self) -> Result<()> {
+        self.conn.execute_batch("PRAGMA user_version = 1")?;
+        Ok(())
+    }
+
+    /// One-time category-taxonomy migration: rewrite legacy category values
+    /// to their v2 equivalents. Idempotent — safe to run on every startup.
+    pub fn remap_categories(&self, map: &[(&str, &str)]) -> Result<usize> {
+        let mut n = 0;
+        for (from, to) in map {
+            n += self.conn.execute(
+                "UPDATE events SET category = ?2 WHERE category = ?1",
+                params![from, to],
+            )?;
+        }
+        Ok(n)
+    }
+
     pub fn cleanup_older_than(&self, days: u32) -> Result<usize> {
         if days == 0 {
             return Ok(0); // 0 = keep forever
@@ -274,6 +301,45 @@ mod tests {
             .unwrap();
         let cats = db.distinct_categories().unwrap();
         assert_eq!(cats, vec!["coding".to_string(), "slack".to_string()]);
+    }
+
+    #[test]
+    fn user_version_marks_migration_done() {
+        let db = open_in_memory();
+        assert!(!db.category_migration_done().unwrap());
+        db.mark_category_migration_done().unwrap();
+        assert!(db.category_migration_done().unwrap());
+    }
+
+    #[test]
+    fn remap_categories_rewrites_legacy_values() {
+        let db = open_in_memory();
+        for (ts, cat) in [
+            ("2026-04-29T09:00:00", "slack"),
+            ("2026-04-29T10:00:00", "browser"),
+            ("2026-04-29T11:00:00", "coding"),
+        ] {
+            db.conn
+                .execute(
+                    "INSERT INTO events (timestamp, image_hash, summary, category, app_name, duration_s)
+                     VALUES (?1, 'h', 's', ?2, NULL, 60)",
+                    params![ts, cat],
+                )
+                .unwrap();
+        }
+        let n = db
+            .remap_categories(&[("slack", "communicating"), ("browser", "browsing")])
+            .unwrap();
+        assert_eq!(n, 2);
+        let cats = db.distinct_categories().unwrap();
+        assert_eq!(
+            cats,
+            vec![
+                "browsing".to_string(),
+                "coding".to_string(),
+                "communicating".to_string()
+            ]
+        );
     }
 
     #[test]

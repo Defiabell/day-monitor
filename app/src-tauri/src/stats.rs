@@ -68,17 +68,30 @@ fn start_time_for(timestamp: &str) -> String {
         .to_string()
 }
 
+/// Same-category events further apart than this are separate sessions —
+/// don't bridge a 4h lunch gap into one "coding 09:00–14:00" block.
+const SESSION_GAP_S: i64 = 900;
+
 pub fn timeline_for_date(db: &Db, date: &str) -> Result<Vec<TimelineSegment>> {
     let events = db.events_for_date(date)?;
     if events.is_empty() {
         return Ok(vec![]);
     }
     let mut segments: Vec<TimelineSegment> = vec![];
+    let mut last_end: Option<NaiveDateTime> = None;
     for e in events {
+        let start_dt = NaiveDateTime::parse_from_str(&e.timestamp, "%Y-%m-%dT%H:%M:%S").ok();
+        let end_dt = start_dt.map(|d| d + Duration::seconds(e.duration_s as i64));
+        // Unparseable timestamps keep the old merge-always behavior.
+        let within_gap = match (last_end, start_dt) {
+            (Some(prev), Some(cur)) => (cur - prev).num_seconds() <= SESSION_GAP_S,
+            _ => true,
+        };
         if let Some(last) = segments.last_mut() {
-            if last.category == e.category {
+            if last.category == e.category && within_gap {
                 last.duration_s += e.duration_s;
                 last.end = end_time_for(&e.timestamp, e.duration_s);
+                last_end = end_dt;
                 continue;
             }
         }
@@ -91,6 +104,7 @@ pub fn timeline_for_date(db: &Db, date: &str) -> Result<Vec<TimelineSegment>> {
             summary: e.summary,
             duration_s: e.duration_s,
         });
+        last_end = end_dt;
     }
     Ok(segments)
 }
@@ -292,6 +306,31 @@ mod tests {
         assert_eq!(segs[0].category, "coding");
         assert_eq!(segs[0].duration_s, 900);
         assert_eq!(segs[1].category, "slack");
+    }
+
+    #[test]
+    fn timeline_splits_same_category_on_long_gap() {
+        // Two coding blocks 4h apart must NOT be bridged into one segment.
+        let db = make_db_with_events(&[
+            ("2026-04-29T09:00:00", "code", "coding", 600),
+            ("2026-04-29T13:00:00", "code again", "coding", 600),
+        ]);
+        let segs = timeline_for_date(&db, "2026-04-29").unwrap();
+        assert_eq!(segs.len(), 2);
+        assert_eq!(segs[0].start, "09:00");
+        assert_eq!(segs[1].start, "13:00");
+    }
+
+    #[test]
+    fn timeline_merges_same_category_within_gap() {
+        // 2min pause between events of the same category still merges.
+        let db = make_db_with_events(&[
+            ("2026-04-29T09:00:00", "code", "coding", 600),
+            ("2026-04-29T09:12:00", "more code", "coding", 300),
+        ]);
+        let segs = timeline_for_date(&db, "2026-04-29").unwrap();
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].duration_s, 900);
     }
 
     #[test]

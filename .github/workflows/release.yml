@@ -38,6 +38,20 @@ jobs:
         working-directory: app
         run: yarn install --frozen-lockfile
 
+      # This exact line has broken the release build before: a local
+      # self-signed identity was committed to tauri.conf.json, and every tagged
+      # build then died deep inside `tauri build` with "The specified item
+      # could not be found in the keychain" — six weeks of broken releases
+      # before anyone tagged again and noticed. Fail here instead, in two
+      # seconds, saying exactly what is wrong. Local signing belongs in
+      # APPLE_SIGNING_IDENTITY (see build_app.sh), never in the committed file.
+      - name: Guard against a committed signing identity
+        run: |
+          if grep -q '"signingIdentity"' app/src-tauri/tauri.conf.json; then
+            echo "::error file=app/src-tauri/tauri.conf.json::signingIdentity is committed in tauri.conf.json. CI has no such identity in its keychain and the build will fail. Remove the line and set APPLE_SIGNING_IDENTITY locally instead."
+            exit 1
+          fi
+
       - name: Build universal .app + .dmg
         working-directory: app
         run: yarn tauri build --target universal-apple-darwin

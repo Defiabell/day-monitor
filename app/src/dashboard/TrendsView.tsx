@@ -13,25 +13,10 @@ import {
 } from 'recharts';
 import { api } from '../lib/api';
 import type { TrendDay, AppTrendDay } from '../lib/types';
+import { categoryColor } from '../lib/categories';
 
-const CATEGORY_COLORS: Record<string, string> = {
-  coding: '#3b82f6',
-  meeting: '#ef4444',
-  slack: '#a855f7',
-  wechat: '#22c55e',
-  feishu: '#0ea5e9',
-  email: '#f59e0b',
-  browser: '#06b6d4',
-  reading: '#84cc16',
-  writing: '#65a30d',
-  design: '#ec4899',
-  '3d': '#f97316',
-  media: '#d946ef',
-  data: '#0d9488',
-  system: '#94a3b8',
-  app: '#94a3b8', // 老数据兼容
-  other: '#6b7280',
-};
+// Sort tooltip rows by hours descending so the biggest time sinks read first
+const byHoursDesc = (item: { value?: unknown }) => -Number(item.value ?? 0);
 
 // Distinct color palette for apps (lines), sorted for visual contrast
 const APP_COLORS = [
@@ -81,7 +66,7 @@ export function TrendsView({ days }: { days: 1 | 7 | 30 }) {
           按分类（category）· 最近 {range} 天（小时）
         </h2>
         <p className="text-xs text-gray-500 mb-3">
-          堆叠柱状图：每天的总时长按 14 个分类（coding / meeting / slack / 3d ... ）拆分
+          堆叠柱状图：每天的总时长按活动分类（coding / ai-coding / meeting / communicating ... ）拆分
         </p>
         <div className="bg-white border border-gray-200 rounded p-4 h-80">
           <ResponsiveContainer>
@@ -89,14 +74,14 @@ export function TrendsView({ days }: { days: 1 | 7 | 30 }) {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="date" />
               <YAxis />
-              <Tooltip />
+              <Tooltip itemSorter={byHoursDesc} />
               <Legend />
               {allCats.map((c) => (
                 <Bar
                   key={c}
                   dataKey={c}
                   stackId="a"
-                  fill={CATEGORY_COLORS[c] ?? '#6b7280'}
+                  fill={categoryColor(c)}
                 />
               ))}
             </BarChart>
@@ -123,7 +108,7 @@ export function TrendsView({ days }: { days: 1 | 7 | 30 }) {
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="date" />
                 <YAxis />
-                <Tooltip />
+                <Tooltip itemSorter={byHoursDesc} />
                 <Legend />
                 {allApps.map((app, i) => (
                   <Line

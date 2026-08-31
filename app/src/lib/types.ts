@@ -61,6 +61,15 @@ export interface Settings {
   active_hour_start: number;
   active_hour_end: number;
   pause_on_battery_below: number;
+  blacklist_apps: string[];
+  show_tray_stats: boolean;
+  /** Anthropic-Messages-compatible base URL. '' = official API. */
+  api_base_url: string;
+  /** Model id. '' = built-in default. */
+  model: string;
+  /** $/Mtoken. 0 on a custom endpoint means free (local model). */
+  price_input_per_mtok: number;
+  price_output_per_mtok: number;
 }
 
 export interface CostStats {

@@ -9,25 +9,7 @@ import {
 } from 'recharts';
 import { api } from '../lib/api';
 import type { CategoryStat } from '../lib/types';
-
-const CATEGORY_COLORS: Record<string, string> = {
-  coding: '#3b82f6',
-  meeting: '#ef4444',
-  slack: '#a855f7',
-  wechat: '#22c55e',
-  feishu: '#0ea5e9',
-  email: '#f59e0b',
-  browser: '#06b6d4',
-  reading: '#84cc16',
-  writing: '#65a30d',
-  design: '#ec4899',
-  '3d': '#f97316',
-  media: '#d946ef',
-  data: '#0d9488',
-  system: '#94a3b8',
-  app: '#94a3b8',
-  other: '#6b7280',
-};
+import { categoryColor } from '../lib/categories';
 
 function fmtDuration(s: number) {
   const h = Math.floor(s / 3600);
@@ -90,7 +72,7 @@ export function PieChartView({ days }: { days: 1 | 7 | 30 }) {
                 {data.map((d, i) => (
                   <Cell
                     key={i}
-                    fill={CATEGORY_COLORS[d.category] ?? '#6b7280'}
+                    fill={categoryColor(d.category)}
                   />
                 ))}
               </Pie>

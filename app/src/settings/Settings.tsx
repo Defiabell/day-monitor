@@ -13,6 +13,12 @@ const DEFAULTS: SettingsT = {
   active_hour_start: 0,
   active_hour_end: 24,
   pause_on_battery_below: 0,
+  blacklist_apps: ['1Password', 'Keychain Access'],
+  show_tray_stats: true,
+  api_base_url: '',
+  model: '',
+  price_input_per_mtok: 0,
+  price_output_per_mtok: 0,
 };
 
 function fmtUsd(v: number) {
@@ -42,9 +48,27 @@ export function Settings() {
       setKeyAlreadySet(true);
       setApiKey('');
     }
-    await api.saveSettings(s);
+    const cleaned = {
+      ...s,
+      blacklist_apps: s.blacklist_apps.map((a) => a.trim()).filter(Boolean),
+      // A stray space would make api_base_url look "set" and silently disable
+      // the CLI path, so both are trimmed before they reach the backend.
+      api_base_url: s.api_base_url.trim(),
+      model: s.model.trim(),
+    };
+    await api.saveSettings(cleaned);
+    setS(cleaned);
     setSavedFlash(true);
     setTimeout(() => setSavedFlash(false), 1500);
+  };
+
+  const [exportedPath, setExportedPath] = useState<string | null>(null);
+  const doExport = async () => {
+    try {
+      setExportedPath(await api.exportData());
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   const toggleAutostart = async () => {
@@ -276,6 +300,105 @@ export function Settings() {
             <span>0% 不暂停</span>
             <span>50%</span>
           </div>
+        </section>
+
+        {/* Blacklist */}
+        <section>
+          <label className="block text-xs text-gray-500 mb-1">
+            隐私黑名单（前台应用命中时<strong>直接跳过截屏</strong>，不产生任何记录；每行一个，大小写不敏感的子串匹配）
+          </label>
+          <textarea
+            rows={3}
+            value={s.blacklist_apps.join('\n')}
+            onChange={(e) =>
+              setS({ ...s, blacklist_apps: e.target.value.split('\n') })
+            }
+            placeholder={'1Password\nKeychain Access'}
+            className="w-full border border-gray-300 rounded px-2 py-1.5 font-mono text-xs"
+          />
+        </section>
+
+        {/* Model / endpoint */}
+        <section>
+          <label className="block text-xs text-gray-500 mb-1">
+            模型端点（留空 = 官方 Anthropic API）。任何兼容 Anthropic Messages
+            API 的地址都可以：本机 ollama ≥ 0.14、LiteLLM/OpenRouter 等网关。
+            <strong>填了这一项就完全不走 claude CLI</strong>，截图只发往你填的地址。
+          </label>
+          <input
+            type="text"
+            value={s.api_base_url}
+            onChange={(e) => setS({ ...s, api_base_url: e.target.value })}
+            placeholder="http://localhost:11434"
+            className="w-full border border-gray-300 rounded px-2 py-1.5 font-mono text-xs"
+          />
+          <label className="block text-xs text-gray-500 mb-1 mt-2">
+            模型 ID（留空 = claude-haiku-4-5-20251001）
+          </label>
+          <input
+            type="text"
+            value={s.model}
+            onChange={(e) => setS({ ...s, model: e.target.value })}
+            placeholder="qwen2.5vl:7b"
+            className="w-full border border-gray-300 rounded px-2 py-1.5 font-mono text-xs"
+          />
+          {s.api_base_url.trim() !== '' && (
+            <div className="mt-2">
+              <label className="block text-xs text-gray-500 mb-1">
+                该模型单价（$/M token，留空或 0 = 免费，本地模型就填 0）。
+                月度预算是按这个价算出来的，填错了预算闸门就是错的。
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={s.price_input_per_mtok}
+                  onChange={(e) =>
+                    setS({ ...s, price_input_per_mtok: +e.target.value })
+                  }
+                  placeholder="input"
+                  className="w-1/2 border border-gray-300 rounded px-2 py-1.5 font-mono text-xs"
+                />
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={s.price_output_per_mtok}
+                  onChange={(e) =>
+                    setS({ ...s, price_output_per_mtok: +e.target.value })
+                  }
+                  placeholder="output"
+                  className="w-1/2 border border-gray-300 rounded px-2 py-1.5 font-mono text-xs"
+                />
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* Tray stats */}
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={s.show_tray_stats}
+            onChange={(e) => setS({ ...s, show_tray_stats: e.target.checked })}
+          />
+          <span>菜单栏显示今日累计时长（如 3.2h）</span>
+        </label>
+
+        {/* Export */}
+        <section>
+          <button
+            onClick={doExport}
+            className="px-3 py-1.5 text-xs border border-gray-300 rounded hover:bg-gray-100"
+          >
+            导出全部数据 (JSON)
+          </button>
+          {exportedPath && (
+            <p className="text-[10px] text-gray-500 mt-1">
+              已导出到 <code>{exportedPath}</code>
+            </p>
+          )}
         </section>
 
         {/* Autostart */}

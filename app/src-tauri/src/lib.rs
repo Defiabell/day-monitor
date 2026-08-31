@@ -156,7 +156,7 @@ pub fn run() {
             let state_arc: Arc<AppState> = state.inner().clone();
             match read_api_key() {
                 Some(key) => {
-                    loop_runner::spawn(state_arc, key);
+                    loop_runner::spawn(state_arc, key, app.handle().clone());
                 }
                 None => {
                     eprintln!(
@@ -181,6 +181,8 @@ pub fn run() {
             commands::get_events,
             commands::list_categories,
             commands::generate_ai_report,
+            commands::generate_weekly_report,
+            commands::export_data,
             commands::open_dashboard,
             commands::open_settings,
             commands::save_api_key,

@@ -36,43 +36,47 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-// ---------- vocabulary (mirrors analyze.py VALID_CATEGORIES) ----------
+// ---------- vocabulary (mirrors analyze.rs VALID_CATEGORIES, v2 taxonomy) ----------
 
 const SUMMARIES: Record<string, string[]> = {
   coding: [
     '在 Cursor 写 React 组件',
     '终端里跑测试',
     '重构订阅模块',
-    '看 diff 改 bug',
     '写 TypeScript 类型',
     '调试接口报错',
     '写单元测试',
   ],
+  'ai-coding': ['Claude Code 在跑任务', '看 AI 代理改代码', '等 Codex 输出结果'],
+  'code-review': ['看 GitHub PR diff', 'review 同事的改动'],
   meeting: ['Zoom 视频例会', '屏幕共享讨论方案', '和同事过需求'],
-  slack: ['回复 Slack 消息', '看 Slack 频道动态'],
-  wechat: ['回微信消息'],
-  feishu: ['看飞书文档', '回飞书消息'],
-  email: ['处理邮件收件箱', '写邮件回复'],
-  browser: ['查 Stack Overflow', '看 GitHub 仓库', '浏览技术博客'],
+  communicating: [
+    '回复 Slack 消息',
+    '回微信消息',
+    '看飞书文档评论',
+    '处理邮件收件箱',
+  ],
+  browsing: ['查 Stack Overflow', '看 GitHub 仓库', '浏览技术博客'],
   reading: ['读技术文档', '看 Notion 笔记', '读 API 文档'],
   writing: ['写设计文档', '在 Obsidian 记笔记', '写周报'],
   design: ['在 Figma 看设计稿'],
   data: ['看 Grafana 面板', '写 SQL 查询数据'],
+  entertainment: ['刷 B 站视频', '逛社交媒体'],
   app: ['整理 Finder 文件'],
 };
 
 const APPS: Record<string, string[]> = {
   coding: ['Cursor', 'iTerm2', 'VS Code'],
+  'ai-coding': ['iTerm2', 'Cursor'],
+  'code-review': ['Chrome'],
   meeting: ['Zoom'],
-  slack: ['Slack'],
-  wechat: ['WeChat'],
-  feishu: ['Lark'],
-  email: ['Mail'],
-  browser: ['Chrome'],
+  communicating: ['Slack', 'WeChat', 'Lark', 'Mail'],
+  browsing: ['Chrome'],
   reading: ['Chrome', 'Notion'],
   writing: ['Obsidian', 'Notion'],
   design: ['Figma'],
   data: ['Chrome', 'DataGrip'],
+  entertainment: ['Chrome'],
   app: ['Finder'],
 };
 
@@ -84,24 +88,24 @@ interface Block {
 
 function weekdayBlocks(rng: () => number): Block[] {
   const blocks: Block[] = [
-    { from: 9 * 60 + 20 + Math.floor(rng() * 20), to: 10 * 60, cats: ['slack', 'email', 'feishu'] },
+    { from: 9 * 60 + 20 + Math.floor(rng() * 20), to: 10 * 60, cats: ['communicating', 'communicating', 'reading'] },
     { from: 10 * 60, to: 10 * 60 + 30, cats: ['meeting'] },
-    { from: 10 * 60 + 32, to: 12 * 60 + 30, cats: ['coding', 'coding', 'coding', 'browser', 'reading'] },
-    { from: 13 * 60 + 30 + Math.floor(rng() * 15), to: 15 * 60 + 30, cats: ['coding', 'coding', 'reading', 'slack'] },
+    { from: 10 * 60 + 32, to: 12 * 60 + 30, cats: ['coding', 'coding', 'ai-coding', 'browsing', 'reading'] },
+    { from: 13 * 60 + 30 + Math.floor(rng() * 15), to: 15 * 60 + 30, cats: ['coding', 'ai-coding', 'code-review', 'communicating'] },
   ];
   if (rng() < 0.5) {
     blocks.push({ from: 15 * 60 + 32, to: 16 * 60 + 15, cats: ['meeting'] });
-    blocks.push({ from: 16 * 60 + 17, to: 18 * 60 + 30, cats: ['coding', 'coding', 'data', 'browser', 'design'] });
+    blocks.push({ from: 16 * 60 + 17, to: 18 * 60 + 30, cats: ['coding', 'ai-coding', 'data', 'browsing', 'design'] });
   } else {
-    blocks.push({ from: 15 * 60 + 32, to: 18 * 60 + 30, cats: ['coding', 'coding', 'data', 'browser'] });
+    blocks.push({ from: 15 * 60 + 32, to: 18 * 60 + 30, cats: ['coding', 'coding', 'ai-coding', 'data', 'browsing'] });
   }
-  blocks.push({ from: 18 * 60 + 32, to: 19 * 60 + 15 + Math.floor(rng() * 30), cats: ['writing', 'email', 'slack', 'wechat'] });
+  blocks.push({ from: 18 * 60 + 32, to: 19 * 60 + 15 + Math.floor(rng() * 30), cats: ['writing', 'communicating', 'entertainment'] });
   return blocks;
 }
 
 function weekendBlocks(rng: () => number): Block[] {
   const start = 20 * 60 + Math.floor(rng() * 40);
-  return [{ from: start, to: start + 90 + Math.floor(rng() * 60), cats: ['coding', 'browser', 'reading', 'wechat'] }];
+  return [{ from: start, to: start + 90 + Math.floor(rng() * 60), cats: ['coding', 'browsing', 'reading', 'entertainment'] }];
 }
 
 function pad(n: number): string {
@@ -205,7 +209,7 @@ function buildReport(date: string): string {
   const coding = stats.find((s) => s.category === 'coding')?.seconds ?? 0;
   const meeting = stats.find((s) => s.category === 'meeting')?.seconds ?? 0;
   const comm = stats
-    .filter((s) => ['slack', 'wechat', 'feishu', 'email'].includes(s.category))
+    .filter((s) => s.category === 'communicating')
     .reduce((a, s) => a + s.seconds, 0);
 
   let longest = segments[0];
@@ -234,6 +238,9 @@ function buildReport(date: string): string {
     '## 会议与沟通',
     `会议 ${fmtHours(meeting)}；Slack、微信、邮件等碎片沟通合计 ${fmtHours(comm)}。`,
     '',
+    '## AI 协作',
+    `AI 代理编码 ${fmtHours(stats.find((s) => s.category === 'ai-coding')?.seconds ?? 0)}，与人工编码穿插进行。`,
+    '',
     '## 建议',
     '- 上午 10:30–12:30 是今天最高效的编码时段，重要任务尽量安排在这个窗口。',
     '- 沟通消息集中在午后，可以尝试批量处理而不是随到随回。',
@@ -256,7 +263,42 @@ const demoSettings: Settings = {
   active_hour_start: 9,
   active_hour_end: 23,
   pause_on_battery_below: 20,
+  blacklist_apps: ['1Password', 'Keychain Access'],
+  show_tray_stats: true,
+  api_base_url: '',
+  model: '',
+  price_input_per_mtok: 0,
+  price_output_per_mtok: 0,
 };
+
+function buildWeeklyReport(endDate: string): string {
+  const end = new Date(`${endDate}T12:00:00Z`);
+  const days: string[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(end);
+    d.setUTCDate(d.getUTCDate() - i);
+    days.push(d.toISOString().slice(0, 10));
+  }
+  const lines = days.map((date) => {
+    const { segments } = generateDay(date);
+    const total = segments.reduce((a, s) => a + s.duration_s, 0);
+    const top = categoryStats(segments)[0];
+    return `| ${date} | ${fmtHours(total)} | ${top ? top.category : '无记录'} |`;
+  });
+  return [
+    `# 工作周报（${days[0]} ~ ${days[6]}）`,
+    '',
+    '## 本周概览',
+    '本周节奏平稳，编码为主线，会议与沟通穿插其间。',
+    '',
+    '## 每日一行',
+    '| 日期 | 时长 | 主要内容 |',
+    '| --- | --- | --- |',
+    ...lines,
+    '',
+    '> 演示数据由本地生成——真实应用中，这份周报由 Claude 基于 7 天记录撰写。',
+  ].join('\n');
+}
 
 function status(): MonitorStatus {
   return {
@@ -344,6 +386,11 @@ export const mockApi = {
     await sleep(700); // pretend to think
     return buildReport(date);
   },
+  generateWeeklyReport: async (endDate?: string, _force = false): Promise<string> => {
+    await sleep(900);
+    return buildWeeklyReport(endDate ?? utcDateStr());
+  },
+  exportData: () => delay('~/Downloads/day-monitor-export-demo.json'),
   openDashboard: (): Promise<void> => {
     window.location.href = './dashboard.html';
     return Promise.resolve();

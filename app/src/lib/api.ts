@@ -35,6 +35,9 @@ const realApi = {
   categories: () => invoke<string[]>('list_categories'),
   generateAIReport: (date: string, force = false) =>
     invoke<string>('generate_ai_report', { date, force }),
+  generateWeeklyReport: (endDate?: string, force = false) =>
+    invoke<string>('generate_weekly_report', { endDate, force }),
+  exportData: () => invoke<string>('export_data'),
   openDashboard: () => invoke<void>('open_dashboard'),
   openSettings: () => invoke<void>('open_settings'),
   saveApiKey: (key: string) => invoke<void>('save_api_key', { key }),

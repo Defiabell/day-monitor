@@ -3,29 +3,51 @@
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 
-const MODEL: &str = "claude-haiku-4-5-20251001";
-const ANTHROPIC_URL: &str = "https://api.anthropic.com/v1/messages";
+/// Where to send a request and as what model.
+///
+/// Built from `Settings` at the call site rather than read from it here, so
+/// this module stays testable without touching the on-disk config.
+#[derive(Debug, Clone)]
+pub struct Endpoint {
+    pub url: String,
+    pub model: String,
+    /// True when the user pointed us away from the official API. The `claude`
+    /// CLI path is skipped in that case: it deliberately scrubs routing env
+    /// and runs on subscription against api.anthropic.com, which is the exact
+    /// opposite of what configuring an endpoint asks for.
+    pub custom: bool,
+}
+
+impl Endpoint {
+    pub fn from_settings(s: &crate::settings::Settings) -> Self {
+        Endpoint {
+            url: s.messages_url(),
+            model: s.resolved_model().to_string(),
+            custom: s.uses_custom_endpoint(),
+        }
+    }
+}
 
 const PROMPT: &str = "你是一个工作活动识别助手。观察这张 macOS 截图，判断用户当前在做什么。\n\n\
 ## 规则\n\
 1. summary：一句中文，15字以内\n\
-2. category：**必须且只能**从下方列表中选择一个，禁止自创类别\n\
+2. category：**必须且只能**从下方列表中选择一个，禁止自创类别。分类描述的是**活动**而不是应用——同一个应用里做不同的事要选不同类别\n\
 3. app：识别正在使用的应用名，识别不出时省略\n\n\
 ## 类别列表（唯一合法值）\n\
-- coding   : IDE、代码编辑器、终端（VS Code、Cursor、Xcode、Terminal、iTerm）\n\
-- meeting  : 视频/语音会议（Zoom、Google Meet、腾讯会议）\n\
-- slack    : Slack\n\
-- wechat   : 微信（WeChat）\n\
-- feishu   : 飞书（Lark）\n\
-- email    : 邮件（Mail、Outlook、Gmail 网页版）\n\
-- browser  : 浏览器中的一般网页浏览（不属于其他更具体类别时才选此项）\n\
-- reading  : 阅读文档、PDF、技术文章、Notion\n\
-- writing  : 写作（Google Docs、Obsidian、Linear 写文档）\n\
-- design   : 设计工具（Figma、Sketch）\n\
-- data     : 数据工具（Grafana、DataGrip、DBeaver、Google Sheets、数据看板）\n\
-- 3d       : 3D 相关应用（Meshy、Blender、Midjourney）\n\
-- app      : 其他桌面应用（Discord、Finder、系统设置、预览等）\n\
-- other    : 以上均不符合时才选此项\n\n\
+- coding        : 用户自己在写/改代码、敲终端命令（IDE、编辑器、终端，人在操作）\n\
+- ai-coding     : AI 编程代理在干活（Claude Code、Codex、Cursor Agent 等正在运行或输出，用户在观察/等待；终端里滚动的是 AI 输出流而不是用户敲的命令时选这个）\n\
+- code-review   : 审阅代码（GitHub PR、diff 对比、review 界面）\n\
+- meeting       : 视频/语音会议（Zoom、Google Meet、腾讯会议）\n\
+- communicating : 即时通讯与邮件（Slack、微信、飞书、Discord、Mail、Gmail）\n\
+- writing       : 写作/写文档（Google Docs、Obsidian、Notion 编辑、Linear 写文档）\n\
+- reading       : 阅读文档、PDF、技术文章\n\
+- design        : 设计工具（Figma、Sketch）\n\
+- data          : 数据工具（Grafana、DataGrip、DBeaver、SQL、Google Sheets、数据看板）\n\
+- 3d            : 3D 相关应用（Meshy、Blender、Midjourney）\n\
+- browsing      : 一般网页浏览（不属于其他更具体类别的网页）\n\
+- entertainment : 娱乐（视频网站、B站/YouTube 刷剧、社交媒体闲逛、游戏、购物）\n\
+- app           : 其他桌面应用（Finder、系统设置、预览等）\n\
+- other         : 以上均不符合时才选此项\n\n\
 返回 JSON：{\"summary\": \"...\", \"category\": \"...\", \"app\": \"...\"}\n\
 只输出 JSON，不要输出其他内容。";
 
@@ -46,13 +68,16 @@ pub struct AnalyzeResult {
     pub output_tokens: u32,
 }
 
-/// Claude Haiku pricing as of 2026-04 ($/Mtoken).
-pub const PRICE_INPUT_PER_MTOK: f64 = 0.80;
-pub const PRICE_OUTPUT_PER_MTOK: f64 = 4.00;
-
-pub fn estimate_cost_usd(input_tokens: u32, output_tokens: u32) -> f64 {
-    (input_tokens as f64 * PRICE_INPUT_PER_MTOK
-        + output_tokens as f64 * PRICE_OUTPUT_PER_MTOK)
+/// Cost of one call at the given per-Mtoken prices. Prices are passed in
+/// rather than hardcoded because the model is now user-configurable, and
+/// `monthly_budget_usd` is computed from this number.
+pub fn estimate_cost_usd(
+    input_tokens: u32,
+    output_tokens: u32,
+    price_input_per_mtok: f64,
+    price_output_per_mtok: f64,
+) -> f64 {
+    (input_tokens as f64 * price_input_per_mtok + output_tokens as f64 * price_output_per_mtok)
         / 1_000_000.0
 }
 
@@ -116,23 +141,33 @@ fn build_prompt(app_hint: Option<&str>) -> String {
     }
 }
 
-/// CLI first, API fallback.
+/// CLI first, API fallback — unless a custom endpoint is configured, in which
+/// case the CLI is skipped entirely (it would silently route to the official
+/// API and defeat the whole point of the setting).
 pub async fn analyze_screenshot(
     image_bytes: &[u8],
     api_key: &str,
     app_hint: Option<&str>,
+    endpoint: &Endpoint,
 ) -> Result<AnalyzeResult, String> {
     let prompt = build_prompt(app_hint);
-    match cli_analyze(image_bytes, &prompt).await {
+    if endpoint.custom {
+        return api_analyze(image_bytes, api_key, &prompt, endpoint).await;
+    }
+    match cli_analyze(image_bytes, &prompt, &endpoint.model).await {
         Ok(result) => Ok(result),
         Err(cli_err) => {
             eprintln!("[day-monitor] CLI failed ({cli_err}), falling back to API");
-            api_analyze(image_bytes, api_key, &prompt).await
+            api_analyze(image_bytes, api_key, &prompt, endpoint).await
         }
     }
 }
 
-async fn cli_analyze(image_bytes: &[u8], prompt: &str) -> Result<AnalyzeResult, String> {
+async fn cli_analyze(
+    image_bytes: &[u8],
+    prompt: &str,
+    model: &str,
+) -> Result<AnalyzeResult, String> {
     let tmp = std::env::temp_dir().join("day-monitor-capture.png");
     tokio::fs::write(&tmp, image_bytes)
         .await
@@ -143,7 +178,7 @@ async fn cli_analyze(image_bytes: &[u8], prompt: &str) -> Result<AnalyzeResult, 
         .arg(prompt)
         .arg(tmp.to_str().unwrap_or_default())
         .arg("--model")
-        .arg(MODEL)
+        .arg(model)
         .arg("--output-format")
         .arg("text")
         // Strip inherited routing/auth overrides (e.g. from a claude-aigw shell):
@@ -175,10 +210,11 @@ async fn api_analyze(
     image_bytes: &[u8],
     api_key: &str,
     prompt: &str,
+    endpoint: &Endpoint,
 ) -> Result<AnalyzeResult, String> {
     let b64 = base64::engine::general_purpose::STANDARD.encode(image_bytes);
     let req = AnthropicRequest {
-        model: MODEL,
+        model: &endpoint.model,
         max_tokens: 100,
         messages: vec![Msg {
             role: "user",
@@ -196,11 +232,20 @@ async fn api_analyze(
     };
 
     let client = reqwest::Client::new();
-    let resp = client
-        .post(ANTHROPIC_URL)
+    let mut builder = client
+        .post(&endpoint.url)
         .header("x-api-key", api_key)
         .header("anthropic-version", "2023-06-01")
-        .header("content-type", "application/json")
+        .header("content-type", "application/json");
+    // Anthropic-compatible servers disagree on the auth header: the official
+    // API and ollama take `x-api-key`, while gateways (LiteLLM, OpenRouter)
+    // and ollama's cloud endpoint want a bearer token. Sending both on a
+    // custom endpoint costs nothing — each side reads the one it knows — and
+    // spares the user a "which header does yours use?" support round-trip.
+    if endpoint.custom {
+        builder = builder.bearer_auth(api_key);
+    }
+    let resp = builder
         .json(&req)
         .send()
         .await
@@ -291,11 +336,68 @@ mod tests {
             assert!(!is_unidentifiable(s), "{s}");
         }
     }
+
+    #[test]
+    fn legacy_categories_map_to_v2() {
+        assert_eq!(normalize_category("slack", None), "communicating");
+        assert_eq!(normalize_category("wechat", None), "communicating");
+        assert_eq!(normalize_category("feishu", None), "communicating");
+        assert_eq!(normalize_category("email", None), "communicating");
+        assert_eq!(normalize_category("browser", None), "browsing");
+        assert_eq!(normalize_category("media", None), "entertainment");
+        assert_eq!(normalize_category("system", None), "app");
+    }
+
+    #[test]
+    fn v2_categories_pass_through() {
+        for c in [
+            "coding", "ai-coding", "code-review", "meeting", "communicating",
+            "writing", "reading", "design", "data", "3d", "browsing",
+            "entertainment", "app", "other",
+        ] {
+            assert_eq!(normalize_category(c, None), c);
+        }
+    }
+
+    #[test]
+    fn unknown_category_falls_back_to_app_mapping() {
+        assert_eq!(normalize_category("chat", Some("Slack")), "communicating");
+        assert_eq!(normalize_category("??", Some("iTerm2")), "coding");
+        assert_eq!(normalize_category("??", Some("WeChat")), "communicating");
+        assert_eq!(normalize_category("??", None), "other");
+    }
+
+    #[test]
+    fn prompt_lists_every_valid_category() {
+        for c in VALID_CATEGORIES {
+            assert!(PROMPT.contains(c), "prompt missing category {c}");
+        }
+        // Legacy names must be gone from the prompt so the model can't emit them.
+        for legacy in ["slack", "wechat", "feishu"] {
+            assert!(
+                !PROMPT.contains(&format!("- {legacy}")),
+                "prompt still lists legacy category {legacy}"
+            );
+        }
+    }
 }
 
-const VALID_CATEGORIES: &[&str] = &[
-    "coding", "meeting", "slack", "wechat", "feishu", "email",
-    "browser", "reading", "writing", "design", "data", "3d", "app", "other",
+pub const VALID_CATEGORIES: &[&str] = &[
+    "coding", "ai-coding", "code-review", "meeting", "communicating",
+    "writing", "reading", "design", "data", "3d", "browsing",
+    "entertainment", "app", "other",
+];
+
+/// Legacy (pre-v2) category values → v2 equivalents. Used both for
+/// normalizing stray model output and for the one-time DB migration.
+pub const LEGACY_CATEGORY_MAP: &[(&str, &str)] = &[
+    ("slack", "communicating"),
+    ("wechat", "communicating"),
+    ("feishu", "communicating"),
+    ("email", "communicating"),
+    ("browser", "browsing"),
+    ("media", "entertainment"),
+    ("system", "app"),
 ];
 
 fn normalize_category(raw: &str, app_name: Option<&str>) -> String {
@@ -303,20 +405,21 @@ fn normalize_category(raw: &str, app_name: Option<&str>) -> String {
     if VALID_CATEGORIES.contains(&cat.as_str()) {
         return cat;
     }
+    if let Some((_, mapped)) = LEGACY_CATEGORY_MAP.iter().find(|(from, _)| *from == cat) {
+        return mapped.to_string();
+    }
     if let Some(app) = app_name {
         let app_lower = app.trim().to_lowercase();
         let mapped = match app_lower.as_str() {
             "code" | "visual studio code" | "cursor" | "xcode"
             | "terminal" | "iterm2" | "warp" | "alacritty" => "coding",
             "zoom" | "google meet" => "meeting",
-            "slack" => "slack",
-            "wechat" | "微信" => "wechat",
-            "lark" | "飞书" | "feishu" => "feishu",
-            "mail" | "outlook" => "email",
+            "slack" | "discord" | "wechat" | "微信"
+            | "lark" | "飞书" | "feishu" | "mail" | "outlook" => "communicating",
             "figma" | "sketch" => "design",
             "datagrip" | "dbeaver" => "data",
             "meshy" | "blender" => "3d",
-            "discord" | "finder" => "app",
+            "finder" => "app",
             _ => "other",
         };
         return mapped.to_string();

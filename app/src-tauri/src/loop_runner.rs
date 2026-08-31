@@ -1,7 +1,7 @@
 //! Pure-Rust monitoring loop. macOS TCC only needs to grant screen-recording
 //! permission to Day Monitor.app — no external python3 process in the chain.
 
-use crate::analyze::{analyze_screenshot, estimate_cost_usd, is_unidentifiable};
+use crate::analyze::{analyze_screenshot, estimate_cost_usd, is_unidentifiable, Endpoint};
 use crate::capture::{
     compute_hash, get_focused_display_num, get_frontmost_app, hash_distance, is_black_screen,
     is_screen_active, take_screenshot,
@@ -15,13 +15,21 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
-pub fn spawn(state: Arc<AppState>, api_key: String) {
+pub fn spawn(state: Arc<AppState>, api_key: String, app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
-        // Cleanup old events on startup using configured retention.
+        // Cleanup old events on startup using configured retention, and
+        // rewrite any legacy category values to the v2 taxonomy (idempotent).
         let s = settings::get();
         if let Ok(db) = Db::open(Db::default_path()) {
             let _ = db.cleanup_older_than(s.retention_days);
+            if !db.category_migration_done().unwrap_or(false)
+                && db.remap_categories(crate::analyze::LEGACY_CATEGORY_MAP).is_ok()
+            {
+                let _ = db.mark_category_migration_done();
+            }
         }
+
+        let mut last_tray_title: Option<String> = None;
 
         // Hash of the last frame the model could not identify (black screen
         // etc.). Kept in memory only, so similar frames skip the API call
@@ -33,6 +41,9 @@ pub fn spawn(state: Arc<AppState>, api_key: String) {
                 break;
             }
             let s = settings::get();
+            // Keep the menu-bar number fresh even while paused/gated, so a
+            // date rollover or settings change is reflected within one tick.
+            update_tray_title(&app, s.show_tray_stats, &mut last_tray_title).await;
             // Privacy gate.
             if !s.privacy_accepted {
                 set_skip(&state, Some("privacy notice not accepted".into()));
@@ -78,6 +89,63 @@ fn set_skip(state: &Arc<AppState>, reason: Option<String>) {
     *state.skip_reason.write().unwrap() = reason;
 }
 
+/// Refresh the tray title with today's tracked total. Only touches the tray
+/// when the formatted value actually changed.
+async fn update_tray_title(
+    app: &tauri::AppHandle,
+    show: bool,
+    last: &mut Option<String>,
+) {
+    let title = if show {
+        tauri::async_runtime::spawn_blocking(|| {
+            Db::open(Db::default_path())
+                .ok()
+                .and_then(|db| crate::stats::today_stats(&db).ok())
+                .map(|t| fmt_tray_title(t.total_seconds))
+                .unwrap_or_default()
+        })
+        .await
+        .unwrap_or_default()
+    } else {
+        String::new()
+    };
+    if last.as_deref() == Some(title.as_str()) {
+        return;
+    }
+    let app2 = app.clone();
+    let t = title.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(tray) = app2.tray_by_id("main") {
+            let _ = tray.set_title(if t.is_empty() { None } else { Some(t.as_str()) });
+        }
+    });
+    *last = Some(title);
+}
+
+/// Menu-bar headline number: "" when nothing tracked, "45m" under an hour,
+/// "3.2h" beyond.
+pub fn fmt_tray_title(total_seconds: u32) -> String {
+    if total_seconds == 0 {
+        return String::new();
+    }
+    if total_seconds < 3600 {
+        return format!("{}m", total_seconds / 60);
+    }
+    format!("{:.1}h", total_seconds as f64 / 3600.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tray_title_formats() {
+        assert_eq!(fmt_tray_title(0), "");
+        assert_eq!(fmt_tray_title(45 * 60), "45m");
+        assert_eq!(fmt_tray_title(3 * 3600 + 12 * 60), "3.2h");
+    }
+}
+
 /// Returns Ok(None) if a normal capture happened, Ok(Some(reason)) if skipped
 /// for a non-error reason (screen off, dedup hit, budget exhausted), Err on
 /// real failure.
@@ -90,12 +158,29 @@ async fn tick(
         return Ok(Some("screen off / locked / user idle".into()));
     }
 
+    // Blacklist gate #1 — before the screenshot is even taken. With an
+    // active blacklist an unidentifiable frontmost app skips the tick
+    // (fail closed): a privacy gate that can't tell who's in front must not
+    // guess. The reason is user-visible in the popover.
+    let detected_app = tauri::async_runtime::spawn_blocking(get_frontmost_app)
+        .await
+        .map_err(|e| format!("join: {e}"))?;
+    match settings::blacklist_verdict(detected_app.as_deref(), &s.blacklist_apps) {
+        settings::BlacklistVerdict::Block(front) => {
+            return Ok(Some(format!("blacklisted app ({front})")));
+        }
+        settings::BlacklistVerdict::Indeterminate => {
+            return Ok(Some(
+                "cannot determine frontmost app (blacklist active)".into(),
+            ));
+        }
+        settings::BlacklistVerdict::Allow => {}
+    }
+
     let max_w = s.max_image_width;
-    let (raw, detected_app) = tauri::async_runtime::spawn_blocking(|| {
+    let raw = tauri::async_runtime::spawn_blocking(|| {
         let display = get_focused_display_num();
-        let app = get_frontmost_app();
-        let bytes = take_screenshot(display)?;
-        Ok::<_, String>((bytes, app))
+        take_screenshot(display)
     })
     .await
     .map_err(|e| format!("join: {e}"))??;
@@ -167,8 +252,31 @@ async fn tick(
         }
     }
 
-    // Resize for API if not already done. resize_to_width with max_w handles this.
-    let result = analyze_screenshot(&resized, api_key, detected_app.as_deref()).await?;
+    // Blacklist gate #2 — re-check right before the image leaves the machine.
+    // The user may have switched into a blacklisted app since gate #1
+    // (classic check-then-act race: check password, tab back). Dropping a
+    // safe frame here is a cheap false positive; uploading a blacklisted one
+    // is not. The fresh app name is also the better analyzer hint.
+    let front_now = tauri::async_runtime::spawn_blocking(get_frontmost_app)
+        .await
+        .map_err(|e| format!("join: {e}"))?;
+    match settings::blacklist_verdict(front_now.as_deref(), &s.blacklist_apps) {
+        settings::BlacklistVerdict::Block(front) => {
+            return Ok(Some(format!(
+                "blacklisted app focused before upload ({front}) — frame dropped"
+            )));
+        }
+        settings::BlacklistVerdict::Indeterminate => {
+            return Ok(Some(
+                "cannot determine frontmost app (blacklist active) — frame dropped".into(),
+            ));
+        }
+        settings::BlacklistVerdict::Allow => {}
+    }
+    let app_hint = front_now.or(detected_app);
+
+    let endpoint = Endpoint::from_settings(&crate::settings::get());
+    let result = analyze_screenshot(&resized, api_key, app_hint.as_deref(), &endpoint).await?;
     if result.category == "other" && is_unidentifiable(&result.summary) {
         *last_skipped_hash = Some(new_hash);
         return Ok(Some("unidentifiable frame (not stored)".into()));
@@ -178,7 +286,7 @@ async fn tick(
         .app
         .as_deref()
         .filter(|s| !s.is_empty())
-        .or(detected_app.as_deref())
+        .or(app_hint.as_deref())
         .map(|s| s.to_string());
     let ts = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string();
     let summary = result.summary;
@@ -186,7 +294,13 @@ async fn tick(
     let new_hash_for_insert = new_hash.clone();
     let in_tok = result.input_tokens;
     let out_tok = result.output_tokens;
-    let cost = estimate_cost_usd(in_tok, out_tok);
+    let cfg_for_price = crate::settings::get();
+    let cost = estimate_cost_usd(
+        in_tok,
+        out_tok,
+        cfg_for_price.price_input(),
+        cfg_for_price.price_output(),
+    );
     let ts_clone = ts.clone();
 
     tauri::async_runtime::spawn_blocking(move || {

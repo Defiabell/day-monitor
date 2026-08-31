@@ -150,10 +150,35 @@ pub fn seconds_since_last_input() -> Option<f64> {
     parse_hid_idle_seconds(&String::from_utf8_lossy(&out.stdout))
 }
 
-/// Best-effort screen-active check. Returns false when the user has been idle
-/// past IDLE_THRESHOLD_S; falls back to true on any error so we don't silently
-/// stop capturing. (Lock/display-sleep detection is still a follow-up.)
+/// Parse `ioreg -n Root -d1` output for the IOConsoleLocked flag.
+fn parse_console_locked(ioreg_output: &str) -> bool {
+    ioreg_output
+        .lines()
+        .find(|l| l.contains("IOConsoleLocked"))
+        .map(|l| l.contains("Yes"))
+        .unwrap_or(false)
+}
+
+/// True when the login session is locked (lock screen / fast user switch).
+/// Catches the window between locking and the HID idle threshold, which used
+/// to burn API calls on lock-screen frames. False on any error.
+pub fn is_console_locked() -> bool {
+    let out = Command::new("/usr/sbin/ioreg")
+        .args(["-n", "Root", "-d1"])
+        .output();
+    match out {
+        Ok(o) => parse_console_locked(&String::from_utf8_lossy(&o.stdout)),
+        Err(_) => false,
+    }
+}
+
+/// Best-effort screen-active check: false when the console is locked or the
+/// user has been idle past IDLE_THRESHOLD_S; falls back to true on any error
+/// so we don't silently stop capturing.
 pub fn is_screen_active() -> bool {
+    if is_console_locked() {
+        return false;
+    }
     match seconds_since_last_input() {
         Some(idle) if idle > IDLE_THRESHOLD_S => false,
         _ => true,
@@ -269,5 +294,17 @@ mod tests {
     #[test]
     fn parse_hid_idle_missing_returns_none() {
         assert_eq!(parse_hid_idle_seconds("no idle info here"), None);
+    }
+
+    #[test]
+    fn parse_console_locked_yes() {
+        let out = "  |   \"IOConsoleLocked\" = Yes";
+        assert!(parse_console_locked(out));
+    }
+
+    #[test]
+    fn parse_console_locked_no_or_missing() {
+        assert!(!parse_console_locked("  |   \"IOConsoleLocked\" = No"));
+        assert!(!parse_console_locked("nothing relevant here"));
     }
 }
