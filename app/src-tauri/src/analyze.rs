@@ -118,8 +118,14 @@ struct AnthropicResponse {
     usage: Option<Usage>,
 }
 
+/// One block of `content`. Only `text` blocks carry anything we read, but
+/// gateways (and newer models) may put a `thinking` block first, which has
+/// no `text` field at all — so `text` must default to empty rather than make
+/// the whole response fail to decode (2026-10-23: every tick through the
+/// LiteLLM gateway died with "decode: missing field `text`").
 #[derive(Deserialize)]
 struct ContentBlock {
+    #[serde(default)]
     text: String,
 }
 
@@ -314,6 +320,14 @@ pub fn is_unidentifiable(summary: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn response_decodes_when_a_thinking_block_precedes_text() {
+        let raw = r#"{"content":[{"type":"thinking","thinking":"","signature":"x"},{"type":"text","text":"hi"}],"usage":{"input_tokens":1,"output_tokens":2}}"#;
+        let parsed: AnthropicResponse = serde_json::from_str(raw).expect("thinking block must not break decoding");
+        let text: String = parsed.content.into_iter().map(|c| c.text).collect();
+        assert_eq!(text, "hi");
+    }
+
     use super::*;
 
     #[test]
