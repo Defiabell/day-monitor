@@ -85,7 +85,31 @@ pub fn estimate_cost_usd(
 struct AnthropicRequest<'a> {
     model: &'a str,
     max_tokens: u32,
+    /// Sent only for Claude models. Gateways (LiteLLM) enable thinking by
+    /// default on newer Claude ids; its hidden reasoning tokens then eat the
+    /// whole `max_tokens` budget and the reply comes back with no `text`
+    /// block at all ("parse: EOF while parsing a value", 2026-10-23). We
+    /// want a 30-token JSON blob, not reasoning. Omitted for other backends
+    /// so an Anthropic-compatible server that does not know the field never
+    /// sees it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thinking: Option<Thinking<'a>>,
     messages: Vec<Msg<'a>>,
+}
+
+#[derive(Serialize)]
+struct Thinking<'a> {
+    #[serde(rename = "type")]
+    type_: &'a str,
+}
+
+/// `thinking: disabled` for Claude ids, nothing for anything else.
+fn thinking_for(model: &str) -> Option<Thinking<'static>> {
+    if model.starts_with("claude") || model.contains("/claude") {
+        Some(Thinking { type_: "disabled" })
+    } else {
+        None
+    }
 }
 
 #[derive(Serialize)]
@@ -222,6 +246,7 @@ async fn api_analyze(
     let req = AnthropicRequest {
         model: &endpoint.model,
         max_tokens: 100,
+        thinking: thinking_for(&endpoint.model),
         messages: vec![Msg {
             role: "user",
             content: vec![
@@ -320,6 +345,14 @@ pub fn is_unidentifiable(summary: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn thinking_is_disabled_only_for_claude_models() {
+        assert_eq!(thinking_for("claude-haiku-5-5").map(|t| t.type_), Some("disabled"));
+        assert_eq!(thinking_for("litellm/claude-sonnet-5").map(|t| t.type_), Some("disabled"));
+        assert!(thinking_for("llama3.2-vision").is_none());
+        assert!(thinking_for("gemini-3.5-flash").is_none());
+    }
+
     #[test]
     fn response_decodes_when_a_thinking_block_precedes_text() {
         let raw = r#"{"content":[{"type":"thinking","thinking":"","signature":"x"},{"type":"text","text":"hi"}],"usage":{"input_tokens":1,"output_tokens":2}}"#;
